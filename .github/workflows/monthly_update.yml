@@ -1,0 +1,28 @@
+name: Aggiornamento mensile dati ETF
+
+on:
+  schedule:
+    - cron: '0 7 1 * *'  # ogni 1° del mese alle 7:00 UTC (8:00 ora italiana)
+  workflow_dispatch:      # permette di lanciarlo manualmente dal sito GitHub
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout codice
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa dipendenze
+        run: pip install supabase yfinance pandas python-dotenv requests
+
+      - name: Esegui aggiornamento
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python data-scripts/scripts/update_data.py
