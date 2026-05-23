@@ -2,7 +2,7 @@
 import './globals.css'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Sun, Moon, TrendingUp, Search, BarChart2, BookOpen } from 'lucide-react'
+import { Sun, Moon, TrendingUp, Search, BarChart2, BookOpen, GitCompare, Scale } from 'lucide-react'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
@@ -55,9 +55,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             {[
-              { href: '/screener', icon: <Search size={14} />, label: 'Screener' },
-              { href: '/backtest', icon: <BarChart2 size={14} />, label: 'Backtest' },
-              { href: '/etf/SWDA.MI', icon: <BookOpen size={14} />, label: 'Esplora ETF' },
+              { href: '/screener',   icon: <Search size={14} />,     label: 'Screener' },
+              { href: '/backtest',   icon: <BarChart2 size={14} />,   label: 'Backtest' },
+              { href: '/comparator',   icon: <GitCompare size={14} />, label: 'Confronta' },
+              { href: '/fondi-vs-etf', icon: <Scale size={14} />,      label: 'Fondi vs ETF' },
+              { href: '/etf/SWDA.MI', icon: <BookOpen size={14} />,  label: 'Esplora ETF' },
             ].map(item => (
               <Link key={item.href} href={item.href} style={{
                 display: 'flex', alignItems: 'center', gap: 6,

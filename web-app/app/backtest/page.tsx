@@ -1,13 +1,18 @@
 'use client'
-import { Suspense, useState, useEffect } from 'react'
+import { Suspense, useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Search, Trash2, Play, TrendingUp, TrendingDown, Info, Plus } from 'lucide-react'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, ReferenceLine, PieChart, Pie, Cell } from 'recharts'
+import { ComposedChart, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, ReferenceLine, PieChart, Pie, Cell } from 'recharts'
 import { ETF_CATALOG, searchCatalog, type ETFEntry } from '@/lib/etf-catalog'
+import { getCompositionProfile, getBondDuration } from '@/lib/etf-composition'
 
 type Instrument = { id: number; ticker: string; isin: string; name: string; type: string; provider: string; currency: string }
 type PriceRow = { date: string; close: number }
 type ETFSlot = { instrument: Instrument; weight: number; prices: PriceRow[] }
+type BenchmarkSeries = { entry: ETFEntry; prices: PriceRow[]; color: string }
+type BenchmarkResult = { ticker: string; name: string; color: string; result: BTResult }
+
+const BENCH_COLORS = ['#60a5fa', '#f59e0b', '#a78bfa', '#fb923c', '#f472b6']
 
 function catalogToInstrument(e: ETFEntry): Instrument {
   return { id: e.id, ticker: e.ticker, isin: e.isin, name: e.name, type: e.type, provider: e.provider, currency: '' }
@@ -71,7 +76,7 @@ function toMonthlyFilled(prices: PriceRow[], allMonths: string[]): Record<string
   return filled
 }
 
-function runBacktest(slots: ETFSlot[], startYM: string, monthly: number, lump: number, growAmount = 0, growFreqMonths = 12): BTResult | null {
+function runBacktest(slots: ETFSlot[], startYM: string, monthly: number, lump: number, growAmount = 0, growFreqMonths = 12, pacFreqMonths = 1): BTResult | null {
   if (!slots.length) return null
   // Find the earliest common start across all ETFs
   const earliestPerSlot = slots.map(s => s.prices[0]?.date?.slice(0, 7) ?? '9999-99')
@@ -94,10 +99,12 @@ function runBacktest(slots: ETFSlot[], startYM: string, monthly: number, lump: n
     const prices = maps.map(mp => mp[ym])
     // Aumento periodico del versamento
     if (growAmount > 0 && i > 0 && i % growFreqMonths === 0) currentMonthly += growAmount
-    const contrib = i === 0 ? lump + currentMonthly : currentMonthly
+    // Contributo solo nei mesi della frequenza scelta
+    const isContribMonth = i === 0 || (pacFreqMonths > 1 ? i % pacFreqMonths === 0 : true)
+    const contrib = isContribMonth ? (i === 0 ? lump + currentMonthly : currentMonthly) : 0
     invested += contrib
     for (let j = 0; j < slots.length; j++) {
-      if (prices[j] > 0) shares[j] += (contrib * W[j]) / prices[j]
+      if (prices[j] > 0 && contrib > 0) shares[j] += (contrib * W[j]) / prices[j]
     }
     const pv = shares.reduce((s, sh, j) => s + sh * prices[j], 0)
     pvs.push(pv)
@@ -239,14 +246,14 @@ function InfoTooltip({ text }: { text: string }) {
   )
 }
 
-function ChartTooltip({ active, payload, label }: any) {
+function ChartTooltip({ active, payload, label, pct }: any) {
   if (!active || !payload?.length) return null
   return (
     <div className="card-sm" style={{ padding: '10px 14px', minWidth: 160 }}>
       <div style={{ fontSize: '0.72rem', color: 'var(--text-2)', marginBottom: 6 }}>{label}</div>
       {payload.map((p: any) => (
-        <div key={p.dataKey} style={{ fontSize: '0.875rem', fontWeight: 700, color: p.color, marginBottom: 2 }}>
-          {p.name}: {fmtEur(p.value)}
+        <div key={p.dataKey} style={{ fontSize: '0.875rem', fontWeight: 700, color: p.color ?? p.stroke, marginBottom: 2 }}>
+          {p.name}: {pct ? `${p.value >= 0 ? '+' : ''}${(p.value as number).toFixed(1)}%` : fmtEur(p.value)}
         </div>
       ))}
     </div>
@@ -405,6 +412,39 @@ function RollingChart({ data }: { data: RollingPoint[] }) {
 
 const YEARS = [1993, 1995, 2000, 2005, 2010, 2015, 2020]
 
+type HistEvent = { ym: string; label: string; type: 'crash' | 'recovery' | 'policy' | 'event' }
+const HISTORICAL_EVENTS: HistEvent[] = [
+  { ym: '1979-01', label: 'Volcker Shock – Stretta Fed',      type: 'policy'   },
+  { ym: '1980-01', label: 'Recessione USA anni \'80',          type: 'crash'    },
+  { ym: '1982-08', label: 'Ripresa Reaganiana',                type: 'recovery' },
+  { ym: '1987-10', label: 'Black Monday',                      type: 'crash'    },
+  { ym: '1990-08', label: 'Recessione 1990–91',                type: 'crash'    },
+  { ym: '1991-04', label: 'Ripresa post-Guerra del Golfo',     type: 'recovery' },
+  { ym: '1994-02', label: '"Bond Massacre" – rialzo Fed',      type: 'policy'   },
+  { ym: '1995-01', label: 'Inizio Bull Market Tech',           type: 'recovery' },
+  { ym: '1997-07', label: 'Crisi Asiatica',                    type: 'crash'    },
+  { ym: '1998-08', label: 'Crisi Russa / LTCM',               type: 'crash'    },
+  { ym: '2000-03', label: 'Scoppio Bolla Dot-com',             type: 'crash'    },
+  { ym: '2003-03', label: 'Ripresa Post-Dotcom',               type: 'recovery' },
+  { ym: '2007-10', label: 'Inizio Crisi 2008',                 type: 'crash'    },
+  { ym: '2009-03', label: 'Inizio Bull Market post-Crisi',    type: 'recovery' },
+  { ym: '2010-05', label: 'Crisi del Debito Europeo',         type: 'crash'    },
+  { ym: '2012-07', label: '"Whatever it takes" – Draghi',     type: 'policy'   },
+  { ym: '2015-08', label: 'Crisi Mercati Cinesi',              type: 'crash'    },
+  { ym: '2016-06', label: 'Brexit',                            type: 'event'    },
+  { ym: '2018-01', label: 'Guerra Commerciale USA–Cina',       type: 'crash'    },
+  { ym: '2020-02', label: 'COVID-19 Lockdown',                 type: 'crash'    },
+  { ym: '2022-02', label: 'Invasione Ucraina',                 type: 'crash'    },
+  { ym: '2023-01', label: 'Inizio Rally AI',                   type: 'recovery' },
+  { ym: '2025-01', label: 'Dazi di Trump',                     type: 'crash'    },
+]
+const EVENT_COLORS: Record<HistEvent['type'], string> = {
+  crash:    '#ef4444',
+  recovery: '#22c55e',
+  policy:   '#f59e0b',
+  event:    '#60a5fa',
+}
+
 const PIE_COLORS = ['#4ade80', '#60a5fa', '#a78bfa', '#f59e0b', '#fb923c', '#f472b6', '#34d399', '#e879f9', '#fbbf24', '#38bdf8']
 
 function DonutCard({ title, data }: { title: string; data: { name: string; value: number }[] }) {
@@ -437,6 +477,7 @@ function DonutCard({ title, data }: { title: string; data: { name: string; value
 function ComposizioneTab({ slots }: { slots: ETFSlot[] }) {
   const entries = slots.map(s => {
     const cat = ETF_CATALOG.find(e => e.ticker === s.instrument.ticker)
+    const comp = getCompositionProfile(s.instrument.ticker)
     return {
       name: s.instrument.name,
       ticker: s.instrument.ticker,
@@ -446,6 +487,7 @@ function ComposizioneTab({ slots }: { slots: ETFSlot[] }) {
       provider: cat?.provider ?? s.instrument.provider ?? 'Altro',
       ter: cat?.ter ?? 0,
       type: s.instrument.type,
+      comp,
     }
   })
 
@@ -458,16 +500,95 @@ function ComposizioneTab({ slots }: { slots: ETFSlot[] }) {
     return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }))
   }
 
+  // Weighted geographic breakdown
+  const geoMap: Record<string, number> = {}
+  for (const e of entries) {
+    if (!e.comp) continue
+    for (const g of e.comp.geography) {
+      geoMap[g.country] = (geoMap[g.country] ?? 0) + g.pct * e.weight / 100
+    }
+  }
+  const geoData = Object.entries(geoMap).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(1)) }))
+
+  // Weighted currency breakdown
+  const currMap: Record<string, number> = {}
+  for (const e of entries) {
+    if (!e.comp) continue
+    for (const c of e.comp.currencies) {
+      currMap[c.code] = (currMap[c.code] ?? 0) + c.pct * e.weight / 100
+    }
+  }
+  const currData = Object.entries(currMap).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(1)) }))
+
+  // Weighted top holdings (aggregate by company name)
+  const holdMap: Record<string, number> = {}
+  for (const e of entries) {
+    if (!e.comp?.topHoldings) continue
+    for (const h of e.comp.topHoldings) {
+      holdMap[h.name] = (holdMap[h.name] ?? 0) + h.pct * e.weight / 100
+    }
+  }
+  const allHoldData = Object.entries(holdMap).sort((a, b) => b[1] - a[1]).map(([name, pct]) => ({ name, pct: parseFloat(pct.toFixed(2)) }))
+  const HOLD_DEFAULT = 15
+  const [showAllHoldings, setShowAllHoldings] = useState(false)
+  const holdData = showAllHoldings ? allHoldData : allHoldData.slice(0, HOLD_DEFAULT)
+  const hasGeo = geoData.length > 0
+  const hasCurr = currData.length > 0
+  const hasHold = allHoldData.length > 0
+
   const terPonderato = entries.reduce((s, e) => s + e.ter * e.weight / 100, 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Donut charts */}
+      {/* Asset class donuts */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
         <DonutCard title="Categoria" data={groupBy('category')} />
         <DonutCard title="Sub-categoria" data={groupBy('subCategory')} />
         <DonutCard title="Provider" data={groupBy('provider')} />
       </div>
+
+      {/* Geography + Currency donuts */}
+      {(hasGeo || hasCurr) && (
+        <div style={{ display: 'grid', gridTemplateColumns: hasCurr ? '1fr 1fr' : '1fr', gap: 16 }}>
+          {hasGeo  && <DonutCard title="Paesi" data={geoData} />}
+          {hasCurr && <DonutCard title="Valute" data={currData} />}
+        </div>
+      )}
+
+      {/* Top holdings table */}
+      {hasHold && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div className="label">Prime aziende nel portafoglio</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: 2 }}>Peso % ponderato per tutti gli ETF in portafoglio</div>
+            </div>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>{allHoldData.length} titoli totali</span>
+          </div>
+          <div style={{ padding: '8px 0 4px' }}>
+            {holdData.map((h, i) => (
+              <div key={h.name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 20px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ width: 22, fontSize: '0.7rem', color: 'var(--text-3)', textAlign: 'right', flexShrink: 0 }}>#{i + 1}</div>
+                <div style={{ flex: 1, fontSize: '0.84rem', fontWeight: 600 }}>{h.name}</div>
+                <div style={{ width: 120 }}>
+                  <div style={{ height: 5, borderRadius: 3, background: 'var(--surface-2)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.min((h.pct / (allHoldData[0]?.pct || 1)) * 100, 100)}%`, background: PIE_COLORS[i % PIE_COLORS.length], borderRadius: 3 }} />
+                  </div>
+                </div>
+                <div style={{ width: 48, textAlign: 'right', fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-1)' }}>{h.pct.toFixed(2)}%</div>
+              </div>
+            ))}
+          </div>
+          {allHoldData.length > HOLD_DEFAULT && (
+            <div style={{ padding: '10px 20px', borderTop: '1px solid var(--border)' }}>
+              <button onClick={() => setShowAllHoldings(v => !v)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600, padding: 0 }}>
+                {showAllHoldings ? '↑ Mostra solo le prime 15' : `↓ Mostra tutte (${allHoldData.length})`}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ETF table */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -502,6 +623,202 @@ function ComposizioneTab({ slots }: { slots: ETFSlot[] }) {
   )
 }
 
+// ─── Bond Duration Panel ──────────────────────────────────────────────────────
+
+function BondDurationPanel({ slots }: { slots: ETFSlot[] }) {
+  const bondItems = useMemo(() => {
+    return slots
+      .map(s => {
+        const entry = ETF_CATALOG.find(e => e.ticker === s.instrument.ticker)
+        if (!entry || entry.category !== 'Obbligazionari') return null
+        const dur = getBondDuration(s.instrument.ticker)
+        if (dur === null) return null
+        return { ticker: s.instrument.ticker, name: entry.name, weight: s.weight, duration: dur, subCategory: entry.subCategory }
+      })
+      .filter(Boolean) as { ticker: string; name: string; weight: number; duration: number; subCategory: string }[]
+  }, [slots])
+
+  if (bondItems.length === 0) return null
+
+  const totalBondWeight  = bondItems.reduce((s, b) => s + b.weight, 0)
+  const totalPortWeight  = slots.reduce((s, sl) => s + sl.weight, 0)
+  const bondPct          = totalPortWeight > 0 ? (totalBondWeight / totalPortWeight) * 100 : 0
+  const avgDur           = totalBondWeight > 0
+    ? bondItems.reduce((s, b) => s + b.duration * b.weight, 0) / totalBondWeight
+    : 0
+  // Portfolio-level duration contribution: how much total portfolio moves per 1% rate change
+  const portDurContrib   = bondItems.reduce((s, b) => s + b.duration * (b.weight / 100), 0)
+
+  const dColor = (d: number) =>
+    d < 0.1 ? '#22c55e' : d < 2 ? '#84cc16' : d < 5 ? '#f59e0b' : d < 9 ? '#f97316' : '#ef4444'
+  const dLabel = (d: number) =>
+    d < 0.1 ? 'Overnight' : d < 2 ? 'Ultra-corta' : d < 4 ? 'Breve' : d < 7 ? 'Media' : d < 12 ? 'Lunga' : 'Molto lunga'
+
+  const sorted = [...bondItems].sort((a, b) => b.duration - a.duration)
+  const maxDur = Math.max(...bondItems.map(b => b.duration), 1)
+
+  const SCENARIOS = [-3, -2, -1, -0.5, 0.5, 1, 2, 3]
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div className="card" style={{ padding: '28px 28px 24px' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: '1.25rem' }}>📊</span>
+          <div style={{ fontWeight: 700, fontSize: '1.1rem', letterSpacing: '-0.02em' }}>Focus Obbligazioni — Analisi Duration</div>
+        </div>
+        <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginBottom: 24 }}>
+          {bondItems.length} ETF obbligazionari · {fmt(bondPct, 0)}% del portafoglio totale
+        </div>
+
+        {/* KPI row */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 28 }}>
+          <div style={{ background: 'var(--surface-2)', borderRadius: 14, padding: '18px 20px', border: `1px solid ${dColor(avgDur)}40` }}>
+            <div className="label" style={{ fontSize: '0.68rem', marginBottom: 8 }}>Duration media ponderata</div>
+            <div style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.04em', color: dColor(avgDur), lineHeight: 1.1, marginBottom: 4 }}>
+              {avgDur < 0.1 ? '≈0' : fmt(avgDur, 1)} <span style={{ fontSize: '1rem', fontWeight: 600 }}>anni</span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: dColor(avgDur), fontWeight: 600 }}>{dLabel(avgDur)}</div>
+          </div>
+          <div style={{ background: 'var(--surface-2)', borderRadius: 14, padding: '18px 20px' }}>
+            <div className="label" style={{ fontSize: '0.68rem', marginBottom: 8 }}>Impatto tassi +1% → parte bond</div>
+            <div style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.04em', color: '#ef4444', lineHeight: 1.1, marginBottom: 4 }}>
+              {avgDur < 0.1 ? '≈0' : `−${fmt(avgDur, 1)}`}<span style={{ fontSize: '1rem', fontWeight: 600 }}>%</span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Sul valore della componente obbligazionaria</div>
+          </div>
+          <div style={{ background: 'var(--surface-2)', borderRadius: 14, padding: '18px 20px' }}>
+            <div className="label" style={{ fontSize: '0.68rem', marginBottom: 8 }}>Impatto tassi +1% → portafoglio</div>
+            <div style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.04em', color: '#f97316', lineHeight: 1.1, marginBottom: 4 }}>
+              {portDurContrib < 0.01 ? '≈0' : `−${fmt(portDurContrib, 2)}`}<span style={{ fontSize: '1rem', fontWeight: 600 }}>%</span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Sul valore totale del portafoglio</div>
+          </div>
+        </div>
+
+        {/* Body: bars + scenarios */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 28, marginBottom: 24 }}>
+
+          {/* Duration bars */}
+          <div>
+            <div className="label" style={{ fontSize: '0.72rem', marginBottom: 14 }}>Duration per ETF (anni)</div>
+            {sorted.map(b => (
+              <div key={b.ticker} style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+                  <div>
+                    <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>{b.ticker}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginLeft: 6 }}>{b.subCategory}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>{b.weight}% ptf</span>
+                    <span style={{ fontWeight: 800, fontSize: '0.88rem', color: dColor(b.duration) }}>
+                      {b.duration < 0.1 ? '≈0' : b.duration.toFixed(1)} <span style={{ fontWeight: 500, fontSize: '0.7rem' }}>anni</span>
+                    </span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, height: 10, background: 'var(--border)', borderRadius: 5, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${Math.min((b.duration / Math.max(maxDur, 20)) * 100, 100)}%`,
+                      background: dColor(b.duration),
+                      borderRadius: 5,
+                    }} />
+                  </div>
+                  <span style={{ fontSize: '0.68rem', color: dColor(b.duration), fontWeight: 600, minWidth: 60, textAlign: 'right' }}>
+                    {dLabel(b.duration)}
+                  </span>
+                </div>
+              </div>
+            ))}
+
+            {/* Scala di riferimento */}
+            <div style={{ marginTop: 16, padding: '10px 14px', background: 'var(--surface-2)', borderRadius: 10 }}>
+              <div className="label" style={{ fontSize: '0.65rem', marginBottom: 8 }}>Scala duration</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {[
+                  { r: '≈0', l: 'Overnight', c: '#22c55e' },
+                  { r: '< 2', l: 'Ultra-corta', c: '#84cc16' },
+                  { r: '2–4', l: 'Breve', c: '#f59e0b' },
+                  { r: '4–7', l: 'Media', c: '#f97316' },
+                  { r: '7–12', l: 'Lunga', c: '#ef4444' },
+                  { r: '12+', l: 'Molto lunga', c: '#dc2626' },
+                ].map(x => (
+                  <div key={x.l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: x.c }} />
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>{x.r} {x.l}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Scenarios */}
+          <div>
+            <div className="label" style={{ fontSize: '0.72rem', marginBottom: 14 }}>Scenari di tasso → impatto stimato</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', fontWeight: 700, padding: '4px 10px' }}>Variazione tassi</div>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', fontWeight: 700, padding: '4px 10px' }}>Bond / Portafoglio</div>
+            </div>
+            {SCENARIOS.map(delta => {
+              const bondImpact = -avgDur * delta
+              const portImpact = -portDurContrib * delta
+              const isGood = delta < 0
+              const c = isGood ? '#22c55e' : '#ef4444'
+              const sign = (n: number) => n > 0 ? `+${fmt(n, 1)}` : fmt(n, 1)
+              return (
+                <div key={delta} style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1fr',
+                  marginBottom: 5, borderRadius: 8, overflow: 'hidden',
+                  border: `1px solid ${c}25`,
+                }}>
+                  <div style={{ padding: '8px 12px', background: `${c}12`, fontWeight: 700, fontSize: '0.82rem', color: c }}>
+                    {delta > 0 ? '+' : ''}{delta}%
+                  </div>
+                  <div style={{ padding: '8px 12px', background: 'var(--surface-2)', display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: c, flex: 1 }}>
+                      {avgDur < 0.1 ? '≈0%' : `${sign(bondImpact)}%`}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>
+                      {portDurContrib < 0.01 ? '≈0%' : `${sign(portImpact)}% ptf`}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>
+              Stime basate su Modified Duration (≈ Macaulay Duration). Valori indicativi — la reale variazione può differire per effetto della convexity e del repricing dei mercati.
+            </div>
+          </div>
+        </div>
+
+        {/* Explanation */}
+        <div style={{ padding: '18px 22px', borderRadius: 12, background: 'var(--accent-dim)', border: '1px solid var(--accent)' }}>
+          <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+            📚 Cos'è la duration e come gestire la parte obbligazionaria
+          </div>
+          <div style={{ fontSize: '0.8125rem', color: 'var(--text-2)', lineHeight: 1.75 }}>
+            La <strong>duration</strong> (o "modified duration") misura la <strong>sensibilità del prezzo di un'obbligazione ai tassi d'interesse</strong>.
+            Un bond con duration 8 anni perde circa <strong>8% di valore se i tassi salgono dell'1%</strong>, e guadagna circa 8% se scendono.
+            <br /><br />
+            <strong>Come usarla in portafoglio:</strong>
+            <br />
+            • <span style={{ color: '#22c55e', fontWeight: 600 }}>Duration breve (&lt;3 anni)</span> — bassa volatilità, protegge se i tassi salgono. Ideale per la quota "stabile" del portafoglio o liquidità parcheggiata.
+            <br />
+            • <span style={{ color: '#f59e0b', fontWeight: 600 }}>Duration media (3–7 anni)</span> — buon equilibrio rischio/rendimento nel ciclo normale dei tassi.
+            <br />
+            • <span style={{ color: '#ef4444', fontWeight: 600 }}>Duration lunga (&gt;7 anni)</span> — si comporta quasi come l'azionario in termini di volatilità. Ottimo se si prevede una discesa dei tassi, rischioso in fasi di rialzo.
+            <br /><br />
+            <strong>Regola pratica:</strong> abbina la duration al tuo <em>orizzonte temporale</em>. Se investi per 10 anni, una duration 7–8 è ragionevole. Se hai bisogno di liquidità in 2 anni, resta sotto 2 anni di duration.
+          </div>
+        </div>
+
+      </div>
+    </div>
+  )
+}
+
 function BacktestContent() {
   const searchParams = useSearchParams()
   const [query, setQuery] = useState('')
@@ -510,49 +827,97 @@ function BacktestContent() {
   const [loadingId, setLoadingId] = useState<number | null>(null)
   const [monthly, setMonthly] = useState(0)
   const [lump, setLump] = useState(100)
-  const [startYear, setStartYear] = useState(2010)
+  const [customStartYear, setCustomStartYear] = useState<number | null>(null)
   const [growAmount, setGrowAmount] = useState(0)
   const [growFreqMonths, setGrowFreqMonths] = useState(12)
+  const [pacFreqMonths, setPacFreqMonths] = useState(1)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<BTResult | null>(null)
+  const [benchmarks, setBenchmarks] = useState<BenchmarkSeries[]>([])
+  const [benchmarkResults, setBenchmarkResults] = useState<BenchmarkResult[]>([])
+  const [benchQuery, setBenchQuery] = useState('')
+  const [benchSearchRes, setBenchSearchRes] = useState<ETFEntry[]>([])
+  const [loadingBench, setLoadingBench] = useState<string | null>(null)
   const [btError, setBtError] = useState<string | null>(null)
   const [showSearch, setShowSearch] = useState(false)
   const [activeTab, setActiveTab] = useState<'performance' | 'composizione'>('performance')
+  const [chartPct, setChartPct] = useState(false)
+  const [chartLog, setChartLog] = useState(false)
+  const [showEvents, setShowEvents] = useState(false)
+  const [showReal, setShowReal] = useState(false)
 
-  // Restore from localStorage or URL param on mount
+  // ── URL tickers (reactive: updates when screener navigates with ?tickers=…) ──
+  const urlTickersStr = useMemo(() => {
+    const tp = searchParams.get('tickers') || searchParams.get('ticker') || ''
+    return tp.split(',').map(t => decodeURIComponent(t.trim())).filter(Boolean).join(',')
+  }, [searchParams])
+
+  // Ref to break the URL load ↔ slots sync loop:
+  // when WE update the URL via replaceState we store the tickers here so the
+  // load effect can detect it came from us and skip re-fetching.
+  const lastSyncedTickers = useRef<string>('')
+
+  // ── Load slots from URL when URL tickers change (reactive, handles same-route navigation) ──
   useEffect(() => {
-    const ticker = searchParams.get('ticker')
-    if (ticker) {
-      const entry = ETF_CATALOG.find(e => e.ticker === ticker)
-      if (entry) addETF(catalogToInstrument(entry))
+    const tickers = urlTickersStr ? urlTickersStr.split(',') : []
+
+    if (!tickers.length) {
+      // No URL params → restore from localStorage
+      try {
+        const saved = localStorage.getItem('cheEtf_bt_v1')
+        if (!saved) return
+        const data = JSON.parse(saved)
+        if (typeof data.monthly === 'number') setMonthly(data.monthly)
+        if (typeof data.lump === 'number') setLump(data.lump)
+        if (typeof data.customStartYear === 'number') setCustomStartYear(data.customStartYear)
+        if (typeof data.growAmount === 'number') setGrowAmount(data.growAmount)
+        if (typeof data.growFreqMonths === 'number') setGrowFreqMonths(data.growFreqMonths)
+        if (typeof data.pacFreqMonths === 'number') setPacFreqMonths(data.pacFreqMonths)
+        const savedSlots: { ticker: string; weight: number }[] = data.slots ?? []
+        if (!savedSlots.length) return
+        Promise.all(savedSlots.map(async ({ ticker: t, weight: w }) => {
+          const entry = ETF_CATALOG.find(e => e.ticker === t)
+          if (!entry) return null
+          try {
+            const res = await fetch(`/api/prices/${encodeURIComponent(t)}`)
+            const { real = [], synthetic = [] } = await res.json()
+            const prices: PriceRow[] = [...synthetic, ...real].sort((a, b) => a.date < b.date ? -1 : 1)
+            return { instrument: catalogToInstrument(entry), weight: w, prices } as ETFSlot
+          } catch { return null }
+        })).then(results => {
+          const valid = results.filter(Boolean) as ETFSlot[]
+          if (valid.length) {
+            lastSyncedTickers.current = valid.map(s => s.instrument.ticker).join(',')
+            setSlots(valid)
+          }
+        })
+      } catch {}
       return
     }
-    try {
-      const saved = localStorage.getItem('cheEtf_bt_v1')
-      if (!saved) return
-      const data = JSON.parse(saved)
-      if (typeof data.monthly === 'number') setMonthly(data.monthly)
-      if (typeof data.lump === 'number') setLump(data.lump)
-      if (typeof data.startYear === 'number') setStartYear(data.startYear)
-      if (typeof data.growAmount === 'number') setGrowAmount(data.growAmount)
-      if (typeof data.growFreqMonths === 'number') setGrowFreqMonths(data.growFreqMonths)
-      const savedSlots: { ticker: string; weight: number }[] = data.slots ?? []
-      if (!savedSlots.length) return
-      Promise.all(savedSlots.map(async ({ ticker: t, weight: w }) => {
-        const entry = ETF_CATALOG.find(e => e.ticker === t)
-        if (!entry) return null
-        try {
-          const res = await fetch(`/api/prices/${encodeURIComponent(t)}`)
-          const { real = [], synthetic = [] } = await res.json()
-          const prices: PriceRow[] = [...synthetic, ...real].sort((a, b) => a.date < b.date ? -1 : 1)
-          return { instrument: catalogToInstrument(entry), weight: w, prices } as ETFSlot
-        } catch { return null }
-      })).then(results => {
-        const valid = results.filter(Boolean) as ETFSlot[]
-        if (valid.length) setSlots(valid)
-      })
-    } catch {}
-  }, []) // eslint-disable-line
+
+    // Skip if WE triggered this URL change (slots→URL sync)
+    if (urlTickersStr === lastSyncedTickers.current) return
+
+    // External URL change (screener cart, direct link, etc.) → reload slots
+    lastSyncedTickers.current = urlTickersStr
+    setResult(null)
+
+    Promise.all(tickers.map(async t => {
+      const entry = ETF_CATALOG.find(e => e.ticker === t)
+      if (!entry) return null
+      try {
+        const res = await fetch(`/api/prices/${encodeURIComponent(t)}`)
+        const { real = [], synthetic = [] } = await res.json()
+        const prices: PriceRow[] = [...synthetic, ...real].sort((a, b) => a.date < b.date ? -1 : 1)
+        return { instrument: catalogToInstrument(entry), weight: 0, prices } as ETFSlot
+      } catch { return null }
+    })).then(results => {
+      const valid = results.filter(Boolean) as ETFSlot[]
+      if (!valid.length) return
+      const eq = Math.floor(100 / valid.length), rem = 100 - eq * valid.length
+      setSlots(valid.map((s, i) => ({ ...s, weight: i === 0 ? eq + rem : eq })))
+    })
+  }, [urlTickersStr]) // eslint-disable-line
 
   // Persist to localStorage on every change
   useEffect(() => {
@@ -560,10 +925,21 @@ function BacktestContent() {
     try {
       localStorage.setItem('cheEtf_bt_v1', JSON.stringify({
         slots: slots.map(s => ({ ticker: s.instrument.ticker, weight: s.weight })),
-        monthly, lump, startYear, growAmount, growFreqMonths,
+        monthly, lump, customStartYear, growAmount, growFreqMonths, pacFreqMonths,
       }))
     } catch {}
-  }, [slots, monthly, lump, startYear, growAmount, growFreqMonths])
+  }, [slots, monthly, lump, customStartYear, growAmount, growFreqMonths, pacFreqMonths])
+
+  // Sync slots tickers → URL so the page is bookmarkable/refreshable
+  // Uses lastSyncedTickers ref to prevent triggering the URL load effect above
+  useEffect(() => {
+    if (!slots.length) return
+    const tickers = slots.map(s => s.instrument.ticker)
+    const str = tickers.join(',')
+    if (str === lastSyncedTickers.current) return // already in sync
+    lastSyncedTickers.current = str
+    window.history.replaceState(null, '', `?tickers=${tickers.map(encodeURIComponent).join(',')}`)
+  }, [slots])
 
   useEffect(() => {
     if (!query.trim()) { setSearchRes([]); return }
@@ -573,6 +949,14 @@ function BacktestContent() {
     }, 150)
     return () => clearTimeout(t)
   }, [query])
+
+  useEffect(() => {
+    if (!benchQuery.trim()) { setBenchSearchRes([]); return }
+    const t = setTimeout(() => {
+      setBenchSearchRes(searchCatalog(benchQuery, 6))
+    }, 150)
+    return () => clearTimeout(t)
+  }, [benchQuery])
 
   async function addETF(inst: Instrument) {
     if (slots.find(s => s.instrument.id === inst.id)) { setQuery(''); setSearchRes([]); return }
@@ -606,8 +990,35 @@ function BacktestContent() {
     setResult(null)
   }
 
+  async function addBenchmark(entry: ETFEntry) {
+    if (benchmarks.find(b => b.entry.ticker === entry.ticker)) { setBenchQuery(''); setBenchSearchRes([]); return }
+    setLoadingBench(entry.ticker)
+    try {
+      const res = await fetch(`/api/prices/${encodeURIComponent(entry.ticker)}`)
+      const { real = [], synthetic = [] } = await res.json()
+      const prices: PriceRow[] = [...synthetic, ...real].sort((a: PriceRow, b: PriceRow) => a.date < b.date ? -1 : 1)
+      const color = BENCH_COLORS[benchmarks.length % BENCH_COLORS.length]
+      setBenchmarks(prev => [...prev, { entry, prices, color }])
+      setResult(null)
+      setBenchmarkResults([])
+    } finally {
+      setBenchQuery(''); setBenchSearchRes([]); setLoadingBench(null)
+    }
+  }
+
+  function removeBenchmark(ticker: string) {
+    setBenchmarks(prev => prev.filter(b => b.entry.ticker !== ticker))
+    setBenchmarkResults(prev => prev.filter(b => b.ticker !== ticker))
+  }
+
   const totalW = slots.reduce((s, sl) => s + sl.weight, 0)
   const canRun = slots.length > 0 && totalW === 100
+
+  // Earliest common start: max of all ETF first-price dates
+  const autoStartYM = slots.length > 0
+    ? slots.map(s => s.prices[0]?.date?.slice(0, 7) ?? '1993-01').reduce((a, b) => a > b ? a : b)
+    : '1993-01'
+  const effectiveStartYM = customStartYear ? `${customStartYear}-01` : autoStartYM
 
   function handleRun() {
     if (!canRun) return
@@ -623,30 +1034,100 @@ function BacktestContent() {
     // Check minimum common months
     const allM = genMonths('1990-01')
     const maps = slots.map(s => toMonthlyFilled(s.prices, allM))
-    const startYM = `${startYear}-01`
-    const common = genMonths(startYM).filter(m => maps.every(mp => mp[m] != null))
+    const common = genMonths(effectiveStartYM).filter(m => maps.every(mp => mp[m] != null))
     if (common.length < 3) {
       const perSlot = slots.map((s, i) => {
         const keys = Object.keys(maps[i]).sort()
         return `${s.instrument.ticker} (dati: ${keys[0] ?? '—'} → ${keys[keys.length - 1] ?? '—'})`
       })
-      setBtError(`Nessun mese comune dal ${startYear}. Storia disponibile:\n${perSlot.join('\n')}`)
+      setBtError(`Nessun mese comune dal ${effectiveStartYM}. Storia disponibile:\n${perSlot.join('\n')}`)
       return
     }
 
     setRunning(true)
     setTimeout(() => {
-      setResult(runBacktest(slots, startYM, monthly, lump, growAmount, growFreqMonths))
+      const r = runBacktest(slots, effectiveStartYM, monthly, lump, growAmount, growFreqMonths, pacFreqMonths)
+      setResult(r)
+      const bResults: BenchmarkResult[] = []
+      for (const b of benchmarks) {
+        const slot: ETFSlot = { instrument: catalogToInstrument(b.entry), weight: 100, prices: b.prices }
+        const br = runBacktest([slot], effectiveStartYM, monthly, lump, growAmount, growFreqMonths, pacFreqMonths)
+        if (br) bResults.push({ ticker: b.entry.ticker, name: b.entry.name, color: b.color, result: br })
+      }
+      setBenchmarkResults(bResults)
       setRunning(false)
     }, 30)
   }
 
   const isUp = result && result.totalReturn >= 0
 
-  return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px' }}>
+  const mergedChartData = useMemo(() => {
+    if (!result) return []
+    return result.chartData.map(pt => {
+      const row: Record<string, any> = { ...pt }
+      for (const b of benchmarkResults) {
+        const match = b.result.chartData.find(bp => bp.date === pt.date)
+        if (match) row[`bench_${b.ticker}`] = match.portfolio
+      }
+      return row
+    })
+  }, [result, benchmarkResults])
 
-      <div style={{ marginBottom: 32 }}>
+  const displayChartData = useMemo(() => {
+    if (!mergedChartData.length) return mergedChartData
+    // Monthly CPI deflator for EUR: ~2% annual = 0.02/12 per month
+    const MONTHLY_CPI = 0.02 / 12
+
+    const deflate = (v: number, i: number) => showReal ? v / Math.pow(1 + MONTHLY_CPI, i) : v
+
+    if (!chartPct) {
+      if (!showReal) return mergedChartData
+      return mergedChartData.map((d, i) => {
+        const row: Record<string, any> = { ...d, portfolio: Math.round(deflate(d.portfolio as number, i)), invested: Math.round(deflate(d.invested as number, i)) }
+        for (const b of benchmarkResults) {
+          const k = `bench_${b.ticker}`
+          if (d[k] != null) row[k] = Math.round(deflate(d[k] as number, i))
+        }
+        return row
+      })
+    }
+
+    const base = deflate(mergedChartData[0].portfolio as number, 0)
+    const benchBases: Record<string, number> = {}
+    for (const b of benchmarkResults) {
+      const idx = mergedChartData.findIndex(d => d[`bench_${b.ticker}`] != null)
+      if (idx >= 0) benchBases[b.ticker] = deflate(mergedChartData[idx][`bench_${b.ticker}`] as number, idx)
+    }
+    return mergedChartData.map((d, i) => {
+      const dv = deflate(d.portfolio as number, i)
+      const iv = deflate(d.invested  as number, i)
+      const row: Record<string, any> = {
+        ...d,
+        portfolio: parseFloat(((dv / base - 1) * 100).toFixed(2)),
+        invested:  parseFloat(((iv / base - 1) * 100).toFixed(2)),
+      }
+      for (const b of benchmarkResults) {
+        const k = `bench_${b.ticker}`
+        if (d[k] != null && benchBases[b.ticker]) {
+          row[k] = parseFloat(((deflate(d[k] as number, i) / benchBases[b.ticker] - 1) * 100).toFixed(2))
+        }
+      }
+      return row
+    })
+  }, [mergedChartData, chartPct, showReal, benchmarkResults])
+
+  const eventChartLabels = useMemo(() => {
+    if (!mergedChartData.length) return []
+    return HISTORICAL_EVENTS.map(e => {
+      const pt = mergedChartData.find(d => d.date >= e.ym)
+      return pt ? { ...e, chartLabel: pt.label as string } : null
+    }).filter(Boolean) as (HistEvent & { chartLabel: string })[]
+  }, [mergedChartData])
+
+  return (
+    <div style={{ maxWidth: 1440, margin: '0 auto', padding: '40px 28px' }}>
+
+      <div style={{ marginBottom: 28 }}>
         <div className="label" style={{ marginBottom: 8 }}>Simulatore</div>
         <h1 style={{ fontSize: 'clamp(1.6rem, 3vw, 2.25rem)', fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 8 }}>
           Backtest PAC
@@ -656,40 +1137,40 @@ function BacktestContent() {
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 28, alignItems: 'start' }}>
 
-        {/* Left: ETF builder */}
-        <div>
-          <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 20 }}>
-            {/* Header */}
-            <div style={{ padding: '16px 20px', borderBottom: slots.length ? '1px solid var(--border)' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontWeight: 600 }}>Portafoglio</div>
-              <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '0.8rem', gap: 5 }}
+        {/* LEFT: Configuration sidebar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, position: 'sticky', top: 80, maxHeight: 'calc(100vh - 100px)', overflowY: 'auto', paddingRight: 4 }}>
+
+          {/* Portafoglio builder */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 18px', borderBottom: slots.length ? '1px solid var(--border)' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Portafoglio</div>
+              <button className="btn btn-ghost" style={{ padding: '5px 10px', fontSize: '0.78rem', gap: 5 }}
                 onClick={() => setShowSearch(v => !v)}>
-                <Plus size={13} /> Aggiungi ETF
+                <Plus size={12} /> Aggiungi ETF
               </button>
             </div>
 
-            {/* Search box */}
             {showSearch && (
-              <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
+              <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
                 <div style={{ position: 'relative' }}>
-                  <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }} />
-                  <input className="input" style={{ paddingLeft: 36 }} autoFocus
+                  <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }} />
+                  <input className="input" style={{ paddingLeft: 32, fontSize: '0.82rem' }} autoFocus
                     placeholder="Cerca per nome, ticker o ISIN…"
                     value={query} onChange={e => setQuery(e.target.value)} />
                 </div>
                 {searchRes.length > 0 && (
-                  <div className="card" style={{ position: 'absolute', left: 20, right: 20, zIndex: 50, marginTop: 6, padding: 0, overflow: 'hidden' }}>
+                  <div className="card" style={{ position: 'absolute', left: 16, right: 16, zIndex: 50, marginTop: 6, padding: 0, overflow: 'hidden' }}>
                     {searchRes.map(inst => (
                       <button key={inst.id} onClick={() => addETF(inst)}
                         disabled={loadingId === inst.id || !!slots.find(s => s.instrument.id === inst.id)}
-                        style={{ width: '100%', textAlign: 'left', padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', opacity: slots.find(s => s.instrument.id === inst.id) ? 0.4 : 1 }}>
+                        style={{ width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', opacity: slots.find(s => s.instrument.id === inst.id) ? 0.4 : 1 }}>
                         <div>
-                          <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{inst.name}</div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-2)' }}>{inst.ticker} · {inst.type} · <span style={{ color: 'var(--text-3)' }}>{inst.isin}</span></div>
+                          <div style={{ fontWeight: 600, fontSize: '0.82rem' }}>{inst.name}</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-2)' }}>{inst.ticker} · {inst.type}</div>
                         </div>
-                        {loadingId === inst.id && <div style={{ width: 14, height: 14, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />}
+                        {loadingId === inst.id && <div style={{ width: 13, height: 13, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />}
                       </button>
                     ))}
                   </div>
@@ -697,39 +1178,42 @@ function BacktestContent() {
               </div>
             )}
 
-            {/* Slots */}
             {slots.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)', fontSize: '0.875rem' }}>
+              <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--text-3)', fontSize: '0.82rem' }}>
                 Aggiungi almeno un ETF per iniziare
               </div>
             ) : (
               <>
-                <div style={{ padding: '10px 20px', background: 'var(--surface-2)', display: 'grid', gridTemplateColumns: '1fr 110px 40px', gap: 12 }}>
-                  <div className="label" style={{ fontSize: '0.7rem' }}>Strumento</div>
-                  <div className="label" style={{ fontSize: '0.7rem' }}>Peso (%)</div>
+                <div style={{ padding: '8px 16px', background: 'var(--surface-2)', display: 'grid', gridTemplateColumns: '1fr 88px 32px', gap: 8 }}>
+                  <div className="label" style={{ fontSize: '0.67rem' }}>Strumento</div>
+                  <div className="label" style={{ fontSize: '0.67rem' }}>Peso</div>
                   <div />
                 </div>
                 {slots.map(slot => (
-                  <div key={slot.instrument.id} style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 110px 40px', gap: 12, alignItems: 'center' }}>
+                  <div key={slot.instrument.id} style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 88px 32px', gap: 8, alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: 3 }}>{slot.instrument.name}</div>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <span className="badge badge-muted" style={{ fontSize: '0.68rem' }}>{slot.instrument.ticker}</span>
-                        <span className="badge badge-blue" style={{ fontSize: '0.68rem' }}>{slot.instrument.type}</span>
+                      <div style={{ fontWeight: 600, fontSize: '0.8rem', marginBottom: 3, lineHeight: 1.3 }}>{slot.instrument.name}</div>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        <span className="badge badge-muted" style={{ fontSize: '0.62rem' }}>{slot.instrument.ticker}</span>
+                        {slot.prices[0]?.date && (
+                          <span className="badge badge-muted" style={{ fontSize: '0.6rem', color: 'var(--text-3)' }}>
+                            da {slot.prices[0].date.slice(0, 7)}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input type="number" min={0} max={100} className="input" style={{ width: 64, padding: '6px 10px', textAlign: 'right' }}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <input type="number" min={0} max={100} className="input" style={{ width: 54, padding: '5px 8px', textAlign: 'right', fontSize: '0.82rem' }}
                         value={slot.weight} onChange={e => setWeight(slot.instrument.id, Number(e.target.value))} />
-                      <span style={{ color: 'var(--text-2)', fontSize: '0.875rem' }}>%</span>
+                      <span style={{ color: 'var(--text-2)', fontSize: '0.82rem' }}>%</span>
                     </div>
                     <button onClick={() => remove(slot.instrument.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 4, display: 'flex' }}>
-                      <Trash2 size={14} />
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 ))}
-                <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', background: 'var(--surface-2)', display: 'flex', justifyContent: 'flex-end' }}>
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: totalW === 100 ? 'var(--green)' : 'var(--red)' }}>
+                <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface-2)', display: 'flex', justifyContent: 'flex-end' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: totalW === 100 ? 'var(--green)' : 'var(--red)' }}>
                     Totale: {totalW}%
                     {totalW !== 100 && <span style={{ fontWeight: 400, color: 'var(--text-2)', marginLeft: 6 }}>(deve fare 100%)</span>}
                   </span>
@@ -738,172 +1222,48 @@ function BacktestContent() {
             )}
           </div>
 
-          {/* Error */}
-          {btError && (
-            <div className="card" style={{ padding: '16px 20px', marginBottom: 20, border: '1px solid var(--red)', color: 'var(--red)', fontSize: '0.875rem', whiteSpace: 'pre-line' }}>
-              ⚠ {btError}
-            </div>
-          )}
+          {/* PAC settings */}
+          <div className="card" style={{ padding: '18px' }}>
+            <div style={{ fontWeight: 600, marginBottom: 16, fontSize: '0.9rem' }}>Impostazioni PAC</div>
 
-          {/* Tabs */}
-          {slots.length > 0 && (
-            <div className="tab-group" style={{ marginBottom: 16 }}>
-              <button className={`tab${activeTab === 'performance' ? ' active' : ''}`} onClick={() => setActiveTab('performance')}>Performance</button>
-              <button className={`tab${activeTab === 'composizione' ? ' active' : ''}`} onClick={() => setActiveTab('composizione')}>Composizione</button>
-            </div>
-          )}
-
-          {/* Composizione tab */}
-          {activeTab === 'composizione' && slots.length > 0 && (
-            <ComposizioneTab slots={slots} />
-          )}
-
-          {/* Results */}
-          {result && activeTab === 'performance' && (
-            <div>
-              {/* Metrics */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
-                {[
-                  { label: 'Rendimento totale', value: `${result.totalReturn >= 0 ? '+' : ''}${fmt(result.totalReturn)}%`, color: result.totalReturn >= 0 ? 'var(--green)' : 'var(--red)', info: 'Guadagno netto del PAC: (valore finale − totale versato) / totale versato. Dipende dal timing dei versamenti, non confrontabile direttamente tra strategie diverse.' },
-                  { label: 'CAGR (TWRR)', value: `${result.cagr >= 0 ? '+' : ''}${fmt(result.cagr)}%`, color: result.cagr >= 0 ? 'var(--green)' : 'var(--red)', info: 'Rendimento annuo composto del prezzo (Time-Weighted Rate of Return). Indipendente dai versamenti PAC — confrontabile con altri strumenti e benchmark.' },
-                  { label: 'Volatilità', value: `${fmt(result.volatility)}%`, color: 'var(--text-1)', info: 'Deviazione standard annualizzata dei rendimenti mensili (σ × √12). Misura l\'ampiezza delle oscillazioni: più alto = più rischioso.' },
-                  { label: 'Max Drawdown', value: `${fmt(result.maxDrawdown)}%`, color: 'var(--red)', info: 'Massima perdita dal picco alla valle nell\'intero periodo. Es: −52% = il portafoglio ha perso la metà dal suo massimo storico prima di recuperare.' },
-                  { label: 'Sharpe', value: fmt(result.sharpe), color: 'var(--text-1)', info: '(CAGR − tasso risk-free 2,5%) / Volatilità. Misura il rendimento extra per unità di rischio totale. >1 = ottimo, 0,5–1 = buono, <0,5 = mediocre.' },
-                  { label: 'Sortino', value: fmt(result.sortino), color: 'var(--text-1)', info: '(CAGR − rf) / downside deviation. Come Sharpe, ma divide solo per la volatilità dei mesi negativi. Premia chi perde meno nei ribassi.' },
-                  { label: 'Calmar', value: fmt(result.calmar), color: 'var(--text-1)', info: 'CAGR / |Max Drawdown|. Rendimento ottenuto per ogni punto % di perdita massima storica. Utile per chi è molto sensibile ai drawdown.' },
-                  { label: 'Ulcer Index', value: `${fmt(result.ulcerIndex)}%`, color: 'var(--text-1)', info: 'Media quadratica di tutti i drawdown storici (non solo il massimo). Penalizza sia la profondità che la durata dei ribassi. Valori bassi = meno "sofferenza".' },
-                  { label: 'UPI', value: fmt(result.upi), color: 'var(--text-1)', info: 'Ulcer Performance Index: (CAGR − rf) / Ulcer Index. Simile a Sharpe ma usa l\'Ulcer Index come rischio — più stabile del Calmar.' },
-                  { label: '% Mesi Positivi', value: `${fmt(result.posMonths)}%`, color: 'var(--text-1)', info: 'Percentuale di mesi con rendimento positivo. L\'MSCI World ha storicamente ≈ 63–64%. Valori alti non implicano necessariamente rendimenti elevati.' },
-                  { label: 'Durata analisi', value: `${Math.round(result.months / 12)} anni`, color: 'var(--text-1)', info: 'Periodo totale analizzato, dalla prima data disponibile (reale o proxy) fino al mese corrente.' },
-                  { label: 'Num. versamenti', value: `${result.months}`, color: 'var(--text-1)', info: 'Numero di mesi simulati = numero di versamenti mensili effettuati nel PAC.' },
-                ].map(m => (
-                  <div key={m.label} className="card" style={{ padding: '14px 16px' }}>
-                    <div className="label" style={{ marginBottom: 6, fontSize: '0.68rem', display: 'flex', alignItems: 'center' }}>
-                      {m.label}<InfoTooltip text={m.info} />
-                    </div>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 700, letterSpacing: '-0.02em', color: m.color }}>{m.value}</div>
-                  </div>
+            <div style={{ marginBottom: 14 }}>
+              <div className="label" style={{ marginBottom: 6, fontSize: '0.7rem' }}>Frequenza versamento</div>
+              <div className="tab-group" style={{ width: '100%' }}>
+                {([['Mensile', 1], ['Trim.', 3], ['Semest.', 6], ['Annuale', 12]] as [string, number][]).map(([label, m]) => (
+                  <button key={m} className={`tab${pacFreqMonths === m ? ' active' : ''}`}
+                    style={{ flex: 1, fontSize: '0.68rem' }}
+                    onClick={() => { setPacFreqMonths(m); setResult(null) }}>
+                    {label}
+                  </button>
                 ))}
               </div>
-
-              {/* Summary */}
-              <div className="card" style={{ padding: '16px 20px', marginBottom: 20, display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-                <div>
-                  <div className="label" style={{ marginBottom: 4 }}>Valore finale portafoglio</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.03em', color: 'var(--accent)' }}>{fmtEur(result.finalValue)}</div>
-                </div>
-                <div>
-                  <div className="label" style={{ marginBottom: 4 }}>Totale investito</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.03em' }}>{fmtEur(result.totalInvested)}</div>
-                </div>
-                <div>
-                  <div className="label" style={{ marginBottom: 4 }}>Guadagno netto</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.03em', color: (result.finalValue - result.totalInvested) >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                    {(result.finalValue - result.totalInvested) >= 0 ? '+' : ''}{fmtEur(result.finalValue - result.totalInvested)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Growth chart */}
-              <div className="card" style={{ padding: '24px 20px', marginBottom: 20 }}>
-                <div className="label" style={{ marginBottom: 16 }}>Crescita portafoglio</div>
-                <ResponsiveContainer width="100%" height={260}>
-                  <AreaChart key="growth" data={result.chartData} margin={{ top: 4, right: 4, left: -10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gPort" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="gInv" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--text-3)" stopOpacity={0.15} />
-                        <stop offset="95%" stopColor="var(--text-3)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickLine={false} axisLine={false} interval={Math.max(Math.floor(result.chartData.length / 8), 1)} />
-                    <YAxis tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickLine={false} axisLine={false} tickFormatter={v => `€${(v/1000).toFixed(0)}k`} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Area type="monotone" dataKey="portfolio" name="Portafoglio" stroke="var(--accent)" strokeWidth={2} fill="url(#gPort)" dot={false} />
-                    <Area type="monotone" dataKey="invested" name="Investito" stroke="var(--text-3)" strokeWidth={1.5} fill="url(#gInv)" dot={false} strokeDasharray="4 3" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Drawdown chart */}
-              <div className="card" style={{ padding: '24px 20px', marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <div className="label">Drawdown</div>
-                  <span className="badge badge-down" style={{ fontSize: '0.75rem' }}>Max {fmt(result.maxDrawdown)}%</span>
-                </div>
-                <ResponsiveContainer width="100%" height={180}>
-                  <AreaChart key="dd" data={result.ddData} margin={{ top: 4, right: 4, left: -10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gDD" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--red)" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="var(--red)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickLine={false} axisLine={false} interval={Math.max(Math.floor(result.ddData.length / 8), 1)} />
-                    <YAxis tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                    <ReferenceLine y={0} stroke="var(--border)" />
-                    <Tooltip content={<DDTooltip />} />
-                    <Area type="monotone" dataKey="dd" stroke="var(--red)" strokeWidth={1.5} fill="url(#gDD)" dot={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Rolling analysis */}
-              <div className="card" style={{ padding: '24px 20px', marginBottom: 20 }}>
-                <div style={{ marginBottom: 16 }}>
-                  <div className="label" style={{ marginBottom: 4 }}>Analisi Rolling</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Metrica calcolata su finestra mobile — annualizzata</div>
-                </div>
-                <RollingChart data={result.rollingData} />
-              </div>
-
-              {/* Heatmap rendimenti mensili */}
-              <div className="card" style={{ padding: '24px 20px' }}>
-                <div style={{ marginBottom: 16 }}>
-                  <div className="label" style={{ marginBottom: 4 }}>Rendimenti mensili</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>
-                    <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(74,222,128,0.6)', marginRight: 4, verticalAlign: 'middle' }} />
-                    positivo
-                    <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(248,113,113,0.6)', marginLeft: 10, marginRight: 4, verticalAlign: 'middle' }} />
-                    negativo · colonna destra = rendimento annuale composto
-                  </div>
-                </div>
-                <ReturnsHeatmap monthlyReturns={result.monthlyReturns} />
-              </div>
             </div>
-          )}
-        </div>
 
-        {/* Right: Settings panel */}
-        <div style={{ position: 'sticky', top: 80 }}>
-          <div className="card" style={{ padding: '20px' }}>
-            <div style={{ fontWeight: 600, marginBottom: 20 }}>Impostazioni PAC</div>
-
-            <div style={{ marginBottom: 16 }}>
-              <div className="label" style={{ marginBottom: 8 }}>Versamento mensile</div>
+            <div style={{ marginBottom: 14 }}>
+              <div className="label" style={{ marginBottom: 6, fontSize: '0.7rem' }}>
+                Importo per rata
+                {pacFreqMonths > 1 && <span style={{ fontWeight: 400, color: 'var(--text-3)', marginLeft: 6 }}>ogni {pacFreqMonths} mesi</span>}
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>€</span>
+                <span style={{ color: 'var(--text-2)', fontWeight: 600, fontSize: '0.85rem' }}>€</span>
                 <input type="number" min={0} className="input" style={{ flex: 1 }}
                   value={monthly} onChange={e => { setMonthly(Number(e.target.value)); setResult(null) }} />
               </div>
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <div className="label" style={{ marginBottom: 8 }}>Investimento iniziale</div>
+            <div style={{ marginBottom: 14 }}>
+              <div className="label" style={{ marginBottom: 6, fontSize: '0.7rem' }}>Investimento iniziale</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>€</span>
+                <span style={{ color: 'var(--text-2)', fontWeight: 600, fontSize: '0.85rem' }}>€</span>
                 <input type="number" min={0} className="input" style={{ flex: 1 }}
                   value={lump} onChange={e => { setLump(Number(e.target.value)); setResult(null) }} />
               </div>
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <div className="label" style={{ marginBottom: 6 }}>Aumento periodico versamento</div>
+            <div style={{ marginBottom: 14 }}>
+              <div className="label" style={{ marginBottom: 6, fontSize: '0.7rem' }}>Aumento periodico versamento</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>+€</span>
+                <span style={{ color: 'var(--text-2)', fontWeight: 600, fontSize: '0.85rem' }}>+€</span>
                 <input type="number" min={0} className="input" style={{ flex: 1 }}
                   placeholder="0"
                   value={growAmount || ''} onChange={e => { setGrowAmount(Number(e.target.value)); setResult(null) }} />
@@ -911,7 +1271,7 @@ function BacktestContent() {
               <div className="tab-group" style={{ width: '100%' }}>
                 {([['Mensile', 1], ['Trim.', 3], ['Semest.', 6], ['Annuale', 12]] as [string, number][]).map(([label, months]) => (
                   <button key={months} className={`tab${growFreqMonths === months ? ' active' : ''}`}
-                    style={{ flex: 1, fontSize: '0.7rem' }}
+                    style={{ flex: 1, fontSize: '0.68rem' }}
                     onClick={() => { setGrowFreqMonths(months); setResult(null) }}>
                     {label}
                   </button>
@@ -919,17 +1279,77 @@ function BacktestContent() {
               </div>
             </div>
 
-            <div style={{ marginBottom: 24 }}>
-              <div className="label" style={{ marginBottom: 8 }}>Anno di inizio</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {YEARS.map(y => (
-                  <button key={y} className={`tab ${startYear === y ? 'active' : ''}`}
-                    style={{ padding: '5px 10px', fontSize: '0.78rem' }}
-                    onClick={() => { setStartYear(y); setResult(null) }}>
-                    {y}
+            <div style={{ marginBottom: 16 }}>
+              <div className="label" style={{ marginBottom: 6, fontSize: '0.7rem' }}>Inizio simulazione</div>
+              {slots.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderRadius: 8, background: customStartYear ? 'var(--surface-2)' : 'rgba(74,222,128,0.08)', border: `1px solid ${customStartYear ? 'var(--border)' : 'rgba(74,222,128,0.3)'}` }}>
+                    <div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginBottom: 1 }}>
+                        {customStartYear ? 'Personalizzato' : '🟢 Automatico'}
+                      </div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-1)' }}>{effectiveStartYM}</div>
+                    </div>
+                    {customStartYear && (
+                      <button onClick={() => { setCustomStartYear(null); setResult(null) }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.7rem', color: 'var(--accent)', fontWeight: 600, padding: 0 }}>
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', flexShrink: 0 }}>Da anno:</span>
+                    <input type="number" min={1990} max={2024} className="input" style={{ flex: 1, padding: '5px 8px', fontSize: '0.8rem' }}
+                      placeholder={autoStartYM.slice(0, 4)}
+                      value={customStartYear ?? ''} onChange={e => { setCustomStartYear(e.target.value ? Number(e.target.value) : null); setResult(null) }} />
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>Aggiungi un ETF per vedere la data disponibile</div>
+              )}
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div className="label" style={{ marginBottom: 8, fontSize: '0.7rem' }}>Benchmark</div>
+              {benchmarks.map(b => (
+                <div key={b.entry.ticker} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: b.color, flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>{b.entry.ticker}</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>{b.entry.name}</div>
+                    </div>
+                  </div>
+                  <button onClick={() => removeBenchmark(b.entry.ticker)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 4 }}>
+                    <Trash2 size={12} />
                   </button>
-                ))}
-              </div>
+                </div>
+              ))}
+              {benchmarks.length < 5 && (
+                <div style={{ position: 'relative', marginTop: benchmarks.length ? 8 : 0 }}>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }} />
+                    <input className="input" style={{ paddingLeft: 29, fontSize: '0.78rem' }}
+                      placeholder="Aggiungi benchmark…"
+                      value={benchQuery} onChange={e => setBenchQuery(e.target.value)} />
+                  </div>
+                  {benchSearchRes.length > 0 && (
+                    <div className="card" style={{ position: 'absolute', left: 0, right: 0, zIndex: 50, marginTop: 4, padding: 0, overflow: 'hidden', maxHeight: 200, overflowY: 'auto' }}>
+                      {benchSearchRes.map(e => (
+                        <button key={e.ticker} onClick={() => addBenchmark(e)}
+                          disabled={loadingBench === e.ticker || !!benchmarks.find(b => b.entry.ticker === e.ticker)}
+                          style={{ width: '100%', textAlign: 'left', padding: '9px 12px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', opacity: benchmarks.find(b => b.entry.ticker === e.ticker) ? 0.4 : 1 }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.78rem' }}>{e.ticker}</div>
+                            <div style={{ fontSize: '0.66rem', color: 'var(--text-3)' }}>{e.name}</div>
+                          </div>
+                          {loadingBench === e.ticker && <div style={{ width: 11, height: 11, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite', flexShrink: 0 }} />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <button className="btn btn-primary" style={{ width: '100%', padding: '13px', fontSize: '0.9375rem', gap: 8, justifyContent: 'center', opacity: canRun ? 1 : 0.5, cursor: canRun ? 'pointer' : 'not-allowed' }}
@@ -945,7 +1365,296 @@ function BacktestContent() {
           </div>
 
         </div>
+
+        {/* RIGHT: Results */}
+        <div>
+
+          {/* Error */}
+          {btError && (
+            <div className="card" style={{ padding: '16px 20px', marginBottom: 20, border: '1px solid var(--red)', color: 'var(--red)', fontSize: '0.875rem', whiteSpace: 'pre-line' }}>
+              ⚠ {btError}
+            </div>
+          )}
+
+          {/* Tabs */}
+          {slots.length > 0 && (
+            <div className="tab-group" style={{ marginBottom: 20 }}>
+              <button className={`tab${activeTab === 'performance' ? ' active' : ''}`} onClick={() => setActiveTab('performance')}>Performance</button>
+              <button className={`tab${activeTab === 'composizione' ? ' active' : ''}`} onClick={() => setActiveTab('composizione')}>Composizione</button>
+            </div>
+          )}
+
+          {/* Composizione tab */}
+          {activeTab === 'composizione' && slots.length > 0 && (
+            <ComposizioneTab slots={slots} />
+          )}
+
+          {/* Results */}
+          {result && activeTab === 'performance' && (
+            <div>
+              {/* Summary bar */}
+              <div className="card" style={{ padding: '20px 28px', marginBottom: 20, display: 'flex', gap: 40, flexWrap: 'wrap' }}>
+                <div>
+                  <div className="label" style={{ marginBottom: 4 }}>Valore finale portafoglio</div>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 700, letterSpacing: '-0.03em', color: 'var(--accent)' }}>{fmtEur(result.finalValue)}</div>
+                </div>
+                <div>
+                  <div className="label" style={{ marginBottom: 4 }}>Totale investito</div>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 700, letterSpacing: '-0.03em' }}>{fmtEur(result.totalInvested)}</div>
+                </div>
+                <div>
+                  <div className="label" style={{ marginBottom: 4 }}>Guadagno netto</div>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 700, letterSpacing: '-0.03em', color: (result.finalValue - result.totalInvested) >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                    {(result.finalValue - result.totalInvested) >= 0 ? '+' : ''}{fmtEur(result.finalValue - result.totalInvested)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Metrics */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10, marginBottom: 20 }}>
+                {[
+                  { label: 'Rend. totale', value: `${result.totalReturn >= 0 ? '+' : ''}${fmt(result.totalReturn)}%`, color: result.totalReturn >= 0 ? 'var(--green)' : 'var(--red)', info: 'Guadagno netto del PAC: (valore finale − totale versato) / totale versato. Dipende dal timing dei versamenti, non confrontabile direttamente tra strategie diverse.' },
+                  { label: 'CAGR (TWRR)', value: `${result.cagr >= 0 ? '+' : ''}${fmt(result.cagr)}%`, color: result.cagr >= 0 ? 'var(--green)' : 'var(--red)', info: 'Rendimento annuo composto del prezzo (Time-Weighted Rate of Return). Indipendente dai versamenti PAC — confrontabile con altri strumenti e benchmark.' },
+                  { label: 'Volatilità', value: `${fmt(result.volatility)}%`, color: 'var(--text-1)', info: 'Deviazione standard annualizzata dei rendimenti mensili (σ × √12). Misura l\'ampiezza delle oscillazioni: più alto = più rischioso.' },
+                  { label: 'Max Drawdown', value: `${fmt(result.maxDrawdown)}%`, color: 'var(--red)', info: 'Massima perdita dal picco alla valle nell\'intero periodo. Es: −52% = il portafoglio ha perso la metà dal suo massimo storico prima di recuperare.' },
+                  { label: 'Sharpe', value: fmt(result.sharpe), color: 'var(--text-1)', info: '(CAGR − tasso risk-free 2,5%) / Volatilità. Misura il rendimento extra per unità di rischio totale. >1 = ottimo, 0,5–1 = buono, <0,5 = mediocre.' },
+                  { label: 'Sortino', value: fmt(result.sortino), color: 'var(--text-1)', info: '(CAGR − rf) / downside deviation. Come Sharpe, ma divide solo per la volatilità dei mesi negativi. Premia chi perde meno nei ribassi.' },
+                  { label: 'Calmar', value: fmt(result.calmar), color: 'var(--text-1)', info: 'CAGR / |Max Drawdown|. Rendimento ottenuto per ogni punto % di perdita massima storica. Utile per chi è molto sensibile ai drawdown.' },
+                  { label: 'Ulcer Index', value: `${fmt(result.ulcerIndex)}%`, color: 'var(--text-1)', info: 'Media quadratica di tutti i drawdown storici (non solo il massimo). Penalizza sia la profondità che la durata dei ribassi. Valori bassi = meno "sofferenza".' },
+                  { label: 'UPI', value: fmt(result.upi), color: 'var(--text-1)', info: 'Ulcer Performance Index: (CAGR − rf) / Ulcer Index. Simile a Sharpe ma usa l\'Ulcer Index come rischio — più stabile del Calmar.' },
+                  { label: '% Mesi Pos.', value: `${fmt(result.posMonths)}%`, color: 'var(--text-1)', info: 'Percentuale di mesi con rendimento positivo. L\'MSCI World ha storicamente ≈ 63–64%. Valori alti non implicano necessariamente rendimenti elevati.' },
+                  { label: 'Durata', value: `${Math.round(result.months / 12)} anni`, color: 'var(--text-1)', info: 'Periodo totale analizzato, dalla prima data disponibile (reale o proxy) fino al mese corrente.' },
+                  { label: 'Versamenti', value: `${result.months}`, color: 'var(--text-1)', info: 'Numero di mesi simulati = numero di versamenti mensili effettuati nel PAC.' },
+                ].map(m => (
+                  <div key={m.label} className="card" style={{ padding: '14px 16px' }}>
+                    <div className="label" style={{ marginBottom: 6, fontSize: '0.67rem', display: 'flex', alignItems: 'center' }}>
+                      {m.label}<InfoTooltip text={m.info} />
+                    </div>
+                    <div style={{ fontSize: '1.15rem', fontWeight: 700, letterSpacing: '-0.02em', color: m.color }}>{m.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Growth chart */}
+              <div className="card" style={{ padding: '24px 24px', marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div className="label">Crescita portafoglio</div>
+                    {benchmarkResults.length > 0 && (
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.72rem', color: 'var(--text-2)' }}>
+                          <div style={{ width: 14, height: 3, background: 'var(--accent)', borderRadius: 2 }} /> Portafoglio
+                        </div>
+                        {benchmarkResults.map(b => (
+                          <div key={b.ticker} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.72rem', color: 'var(--text-2)' }}>
+                            <div style={{ width: 14, height: 0, borderTop: `2px dashed ${b.color}` }} /> {b.ticker}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div className="tab-group">
+                      <button className={`tab${!chartPct ? ' active' : ''}`} onClick={() => setChartPct(false)} style={{ fontSize: '0.72rem', padding: '4px 10px' }}>€</button>
+                      <button className={`tab${chartPct ? ' active' : ''}`}  onClick={() => setChartPct(true)}  style={{ fontSize: '0.72rem', padding: '4px 10px' }}>%</button>
+                    </div>
+                    <button className={`tab${chartLog ? ' active' : ''}`} onClick={() => setChartLog(v => !v)} style={{ fontSize: '0.72rem', padding: '4px 10px' }}>Log</button>
+                    <button className={`tab${showReal ? ' active' : ''}`} onClick={() => setShowReal(v => !v)} style={{ fontSize: '0.72rem', padding: '4px 10px' }} title="Corregge i valori per l'inflazione (−2% annuo EUR)">CPI</button>
+                    <button className={`tab${showEvents ? ' active' : ''}`} onClick={() => setShowEvents(v => !v)} style={{ fontSize: '0.72rem', padding: '4px 10px' }}>📅 Eventi</button>
+                  </div>
+                </div>
+
+                {showReal && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginBottom: 10 }}>
+                    📉 Valori corretti per inflazione EUR ~2% annuo — in euro reali di oggi
+                  </div>
+                )}
+
+                <ResponsiveContainer width="100%" height={440}>
+                  <ComposedChart key={`growth-${chartPct}-${chartLog}`} data={displayChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gPort" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.22} />
+                        <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="gInv" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--text-3)" stopOpacity={0.15} />
+                        <stop offset="95%" stopColor="var(--text-3)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickLine={false} axisLine={false} interval={Math.max(Math.floor(displayChartData.length / 10), 1)} />
+                    <YAxis
+                      scale={chartLog ? 'log' : 'auto'}
+                      domain={chartLog ? ['auto', 'auto'] : undefined}
+                      tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickLine={false} axisLine={false} width={64}
+                      tickFormatter={v => chartPct ? `${v >= 0 ? '+' : ''}${Number(v).toFixed(0)}%` : `€${(v/1000).toFixed(0)}k`}
+                    />
+                    <Tooltip content={(props: any) => <ChartTooltip {...props} pct={chartPct} />} />
+                    {showEvents && eventChartLabels.map(e => (
+                      <ReferenceLine key={e.ym} x={e.chartLabel}
+                        stroke={EVENT_COLORS[e.type]} strokeWidth={1.5} strokeOpacity={0.75}
+                        strokeDasharray="3 2"
+                      />
+                    ))}
+                    <Area type="monotone" dataKey="portfolio" name="Portafoglio" stroke="var(--accent)" strokeWidth={2.5} fill="url(#gPort)" dot={false} />
+                    {!chartPct && <Area type="monotone" dataKey="invested" name="Investito" stroke="var(--text-3)" strokeWidth={1.5} fill="url(#gInv)" dot={false} strokeDasharray="4 3" />}
+                    {benchmarkResults.map(b => (
+                      <Line key={b.ticker} type="monotone" dataKey={`bench_${b.ticker}`} name={b.ticker} stroke={b.color} strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls />
+                    ))}
+                  </ComposedChart>
+                </ResponsiveContainer>
+
+                {/* Events legend below chart */}
+                {showEvents && eventChartLabels.length > 0 && (
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginBottom: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      Legenda eventi
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {eventChartLabels.map(e => (
+                        <div key={e.ym} style={{
+                          display: 'flex', alignItems: 'center', gap: 5,
+                          padding: '4px 9px', borderRadius: 6,
+                          background: `${EVENT_COLORS[e.type]}18`,
+                          border: `1px solid ${EVENT_COLORS[e.type]}50`,
+                          fontSize: '0.7rem',
+                        }}>
+                          <span style={{ color: EVENT_COLORS[e.type], fontWeight: 700, fontSize: '0.68rem', flexShrink: 0 }}>{e.ym.slice(0, 4)}</span>
+                          <span style={{ color: 'var(--text-2)' }}>{e.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Drawdown chart */}
+              <div className="card" style={{ padding: '24px 24px', marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div className="label">Drawdown</div>
+                  <span className="badge badge-down" style={{ fontSize: '0.75rem' }}>Max {fmt(result.maxDrawdown)}%</span>
+                </div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <AreaChart key="dd" data={result.ddData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gDD" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--red)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--red)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickLine={false} axisLine={false} interval={Math.max(Math.floor(result.ddData.length / 10), 1)} />
+                    <YAxis tick={{ fontSize: 11, fill: 'var(--text-3)' }} tickLine={false} axisLine={false} width={52} tickFormatter={v => `${v}%`} />
+                    <ReferenceLine y={0} stroke="var(--border)" />
+                    <Tooltip content={<DDTooltip />} />
+                    <Area type="monotone" dataKey="dd" stroke="var(--red)" strokeWidth={1.5} fill="url(#gDD)" dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Rolling analysis */}
+              <div className="card" style={{ padding: '24px 24px', marginBottom: 20 }}>
+                <div style={{ marginBottom: 16 }}>
+                  <div className="label" style={{ marginBottom: 4 }}>Analisi Rolling</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Metrica calcolata su finestra mobile — annualizzata</div>
+                </div>
+                <RollingChart data={result.rollingData} />
+              </div>
+
+              {/* Heatmap rendimenti mensili */}
+              <div className="card" style={{ padding: '24px 24px', marginBottom: benchmarkResults.length > 0 ? 20 : 0 }}>
+                <div style={{ marginBottom: 16 }}>
+                  <div className="label" style={{ marginBottom: 4 }}>Rendimenti mensili</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>
+                    <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(74,222,128,0.6)', marginRight: 4, verticalAlign: 'middle' }} />
+                    positivo
+                    <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(248,113,113,0.6)', marginLeft: 10, marginRight: 4, verticalAlign: 'middle' }} />
+                    negativo · colonna destra = rendimento annuale composto
+                  </div>
+                </div>
+                <ReturnsHeatmap monthlyReturns={result.monthlyReturns} />
+              </div>
+
+              {/* Benchmark comparison table */}
+              {benchmarkResults.length > 0 && (() => {
+                const COLS = [
+                  { label: 'CAGR',      get: (r: BTResult) => ({ v: r.cagr,         fmt: (v: number) => `${v >= 0 ? '+' : ''}${fmt(v)}%`, color: (v: number) => v >= 0 ? 'var(--green)' : 'var(--red)' }) },
+                  { label: 'Vol.',      get: (r: BTResult) => ({ v: r.volatility,    fmt: (v: number) => `${fmt(v)}%`,                    color: () => 'var(--text-1)', lowerIsBetter: true }) },
+                  { label: 'Sharpe',    get: (r: BTResult) => ({ v: r.sharpe,        fmt: (v: number) => fmt(v),                          color: () => 'var(--text-1)' }) },
+                  { label: 'Sortino',   get: (r: BTResult) => ({ v: r.sortino,       fmt: (v: number) => fmt(v),                          color: () => 'var(--text-1)' }) },
+                  { label: 'Max DD',    get: (r: BTResult) => ({ v: r.maxDrawdown,   fmt: (v: number) => `${fmt(v)}%`,                    color: () => 'var(--red)' }) },
+                  { label: 'Calmar',    get: (r: BTResult) => ({ v: r.calmar,        fmt: (v: number) => fmt(v),                          color: () => 'var(--text-1)' }) },
+                  { label: 'Ulcer',     get: (r: BTResult) => ({ v: r.ulcerIndex,    fmt: (v: number) => `${fmt(v)}%`,                    color: () => 'var(--text-1)', lowerIsBetter: true }) },
+                  { label: 'Tot. Ret.', get: (r: BTResult) => ({ v: r.totalReturn,   fmt: (v: number) => `${v >= 0 ? '+' : ''}${fmt(v)}%`, color: (v: number) => v >= 0 ? 'var(--green)' : 'var(--red)' }) },
+                  { label: '% Pos.',    get: (r: BTResult) => ({ v: r.posMonths,     fmt: (v: number) => `${fmt(v)}%`,                    color: () => 'var(--text-1)' }) },
+                ] as const
+                const rows = [
+                  { ticker: 'Portafoglio', name: '', color: 'var(--accent)', result },
+                  ...benchmarkResults,
+                ]
+                return (
+                  <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                    <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)' }}>
+                      <div className="label">Confronto con benchmark</div>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--surface-2)' }}>
+                            <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>Strumento</th>
+                            {COLS.map(c => (
+                              <th key={c.label} style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{c.label}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map(row => (
+                            <tr key={row.ticker} style={{ borderTop: '1px solid var(--border)' }}>
+                              <td style={{ padding: '12px 16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ width: 10, height: 10, borderRadius: 2, background: row.color, flexShrink: 0 }} />
+                                  <div>
+                                    <div style={{ fontWeight: 600 }}>{row.ticker}</div>
+                                    {row.name && <div style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginTop: 1 }}>{row.name}</div>}
+                                  </div>
+                                </div>
+                              </td>
+                              {COLS.map(col => {
+                                const { v, fmt: fmtV, color, lowerIsBetter } = { lowerIsBetter: false, ...col.get(row.result) }
+                                const allVals = rows.map(r => col.get(r.result).v)
+                                const isBest = lowerIsBetter ? v === Math.min(...allVals) : v === Math.max(...allVals)
+                                const hasTie = allVals.filter(x => x === (lowerIsBetter ? Math.min(...allVals) : Math.max(...allVals))).length > 1
+                                return (
+                                  <td key={col.label} style={{ padding: '12px 16px', textAlign: 'right', color: color(v), fontWeight: isBest ? 700 : 400, whiteSpace: 'nowrap' }}>
+                                    {isBest && !hasTie && <span style={{ color: 'var(--green)', marginRight: 3, fontSize: '0.7rem' }}>▲</span>}
+                                    {fmtV(v)}
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!result && slots.length > 0 && activeTab === 'performance' && (
+            <div className="card" style={{ padding: '60px 40px', textAlign: 'center', color: 'var(--text-3)' }}>
+              <div style={{ fontSize: '2rem', marginBottom: 12 }}>📊</div>
+              <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: 8 }}>Pronto per il backtest</div>
+              <div style={{ fontSize: '0.875rem' }}>Configura le impostazioni PAC e clicca «Avvia Backtest»</div>
+            </div>
+          )}
+
+        </div>
       </div>
+
+      {/* ── Bond Duration Panel (full-width, visible when bonds in portfolio) ── */}
+      {slots.length > 0 && <BondDurationPanel slots={slots} />}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
@@ -954,7 +1663,7 @@ function BacktestContent() {
 
 export default function BacktestPage() {
   return (
-    <Suspense fallback={<div style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px', color: 'var(--text-2)' }}>Caricamento…</div>}>
+    <Suspense fallback={<div style={{ maxWidth: 1440, margin: '0 auto', padding: '40px 28px', color: 'var(--text-2)' }}>Caricamento…</div>}>
       <BacktestContent />
     </Suspense>
   )

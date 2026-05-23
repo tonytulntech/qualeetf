@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import YahooFinance from 'yahoo-finance2'
 import { ETF_CATALOG } from '@/lib/etf-catalog'
-import { getCompositionProfile } from '@/lib/etf-composition'
+import { getCompositionProfile, getBondDuration } from '@/lib/etf-composition'
 
 const yf = new YahooFinance()
 
@@ -65,11 +65,26 @@ export async function GET(
       cash:  th?.cashPosition  != null ? Math.round(th.cashPosition  * 1000) / 10 : null,
     }
 
-    // Dati statici (geo + valute)
+    // Dati statici (geo + valute + holdings fallback)
     const staticData = getCompositionProfile(ticker)
 
+    // Se Yahoo Finance non restituisce holdings (bond ETF, crypto, ETP)
+    // usa i topHoldings statici come fallback
+    const finalHoldings = holdings.length > 0
+      ? holdings
+      : (staticData?.topHoldings ?? []).map(h => ({ name: h.name, symbol: '', pct: h.pct }))
+
+    const avgDurationYears = getBondDuration(ticker)
+
     return NextResponse.json(
-      { sectors, holdings, assetMix, ...staticData },
+      {
+        sectors,
+        holdings: finalHoldings,
+        assetMix,
+        geography:       staticData?.geography       ?? null,
+        currencies:      staticData?.currencies      ?? null,
+        avgDurationYears,
+      },
       { headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800' } }
     )
   } catch (err: any) {

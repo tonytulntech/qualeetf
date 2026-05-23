@@ -23,11 +23,11 @@ export const ALL_CATEGORIES = ['Azionari', 'Obbligazionari', 'Bilanciati', 'Mate
 
 export const SUB_CATEGORIES: Record<string, string[]> = {
   'Azionari':         ['Globale', 'USA', 'NASDAQ', 'Europa', 'Emergenti', 'Asia', 'Small Cap', 'Immobiliare', 'Dividendi', 'Tecnologia', 'Healthcare', 'Energia', 'Finanza', 'Factor', 'ESG'],
-  'Obbligazionari':   ['Globali', 'Governativi', 'Corporate', 'High Yield', 'Inflation-Linked'],
+  'Obbligazionari':   ['Globali', 'Governativi', 'Corporate', 'High Yield', 'Inflation-Linked', 'USD Governativi', 'USD Corporate', 'Emergenti', 'ESG Bond', 'Ultra-Short'],
   'Bilanciati':       ['Multi-Asset'],
   'Materie Prime':    ['Diversificato', 'Metalli Industriali'],
   'Metalli Preziosi': ['Oro'],
-  'Criptovalute':     ['Bitcoin'],
+  'Criptovalute':     ['Bitcoin', 'Ethereum', 'Altcoin'],
 }
 
 // formato interno: [isin, tickerYF, ticker, exchange, name, ter, type, provider, underlyingIndex, category, subCategory]
@@ -134,9 +134,44 @@ const RAW: [string, string, string, string, string, number, string, string, stri
   ["IE00B4ND3602", "PPFB.MI",   "PPFB.MI",   "BIT",      "iShares Physical Gold ETC USD",                            0.12, "ETC", "iShares",   "Physical Gold",                                            "Metalli Preziosi", "Oro"],
   ["IE00B579F325", "SGLD.MI",   "SGLD.MI",   "BIT",      "Invesco Physical Gold ETC USD",                            0.12, "ETC", "Invesco",   "Physical Gold",                                            "Metalli Preziosi", "Oro"],
   ["JE00B1VS3770", "PHAU.MI",   "PHAU.MI",   "BIT",      "WisdomTree Physical Gold ETC USD",                         0.39, "ETC", "WisdomTree","Physical Gold",                                            "Metalli Preziosi", "Oro"],
+  // ── USD Governativi (Treasury) ───────────────────────────────────────────
+  ["IE00BSKRJZ44", "IDTL.L",   "IDTL.L",    "LSE",      "iShares $ Treasury Bond 20+yr UCITS ETF USD (Acc)",        0.07, "ETF", "iShares",   "Bloomberg US Treasury 20+ Year",                           "Obbligazionari", "USD Governativi"],
+  ["IE00B3VWN179", "DTLA.L",   "DTLA.L",    "LSE",      "iShares $ Treasury Bond 7-10yr UCITS ETF USD (Acc)",       0.07, "ETF", "iShares",   "Bloomberg US Treasury 7-10 Year",                          "Obbligazionari", "USD Governativi"],
+  ["IE00B3DKXQ41", "IBTM.L",   "IBTM.L",    "LSE",      "iShares $ Treasury Bond 3-7yr UCITS ETF USD (Acc)",        0.07, "ETF", "iShares",   "Bloomberg US Treasury 3-7 Year",                           "Obbligazionari", "USD Governativi"],
+  ["IE00BGSF1W54", "IBTU.L",   "IBTU.L",    "LSE",      "iShares $ Treasury Bond 0-1yr UCITS ETF USD (Acc)",        0.07, "ETF", "iShares",   "Bloomberg US Treasury 0-1 Year",                           "Obbligazionari", "USD Governativi"],
+  ["IE00BYSTBW60", "VDTY.L",   "VDTY.L",    "LSE",      "Vanguard USD Treasury Bond UCITS ETF USD (Acc)",           0.07, "ETF", "Vanguard",  "Bloomberg US Treasury Float Adj",                          "Obbligazionari", "USD Governativi"],
+  // ── USD Corporate ────────────────────────────────────────────────────────
+  ["IE00BYZTVT56", "LQDA.L",   "LQDA.L",    "LSE",      "iShares $ Corporate Bond UCITS ETF USD (Acc)",             0.20, "ETF", "iShares",   "Bloomberg US Corporate Bond",                              "Obbligazionari", "USD Corporate"],
+  ["IE00BZ163K21", "VUCP.MI",  "VUCP.MI",   "BIT",      "Vanguard USD Corporate Bond UCITS ETF USD (Acc)",          0.09, "ETF", "Vanguard",  "Bloomberg US Corporate Float Adj",                         "Obbligazionari", "USD Corporate"],
+  ["IE00B3F81G35", "LQDE.L",   "LQDE.L",    "LSE",      "iShares $ Corporate Bond UCITS ETF USD (Dist)",            0.20, "ETF", "iShares",   "Bloomberg US Corporate Bond",                              "Obbligazionari", "USD Corporate"],
+  // ── Obbligazioni Emergenti ───────────────────────────────────────────────
+  ["IE00B2NPKV68", "SEML.MI",  "SEML.MI",   "BIT",      "iShares JPMorgan $ EM Bond UCITS ETF USD (Dist)",          0.45, "ETF", "iShares",   "JPMorgan EMBI Global Core",                                "Obbligazionari", "Emergenti"],
+  ["IE00BZ163M45", "VDEM.L",   "VDEM.L",    "LSE",      "Vanguard USD Emerging Markets Gov Bond UCITS ETF USD (Acc)", 0.25, "ETF", "Vanguard",  "Bloomberg USD EM Government RIC Capped",                "Obbligazionari", "Emergenti"],
+  ["LU1507526163", "EMBE.MI",  "EMBE.MI",   "BIT",      "Amundi J.P. Morgan GBI-EM Global Div UCITS ETF USD (Acc)", 0.30, "ETF", "Amundi",    "JPMorgan GBI-EM Global Diversified",                      "Obbligazionari", "Emergenti"],
+  // ── ESG Bond ─────────────────────────────────────────────────────────────
+  ["LU2145461893", "CLMA.MI",  "CLMA.MI",   "BIT",      "Amundi Global Green Bond UCITS ETF EUR Hedged (Acc)",      0.25, "ETF", "Amundi",    "Bloomberg MSCI Global Green Bond EUR Hedged",              "Obbligazionari", "ESG Bond"],
+  // ── Ultra-Short / Monetario ──────────────────────────────────────────────
+  ["LU0290358497", "XEON.DE",  "XEON.DE",   "XETRA",    "Xtrackers EUR Overnight Rate Swap UCITS ETF EUR (Acc)",    0.10, "ETF", "Xtrackers", "Deutsche Bundesbank EONIA Overnight",                      "Obbligazionari", "Ultra-Short"],
+  ["LU1190417599", "CSH2.PA",  "CSH2.PA",   "EURONEXT", "Amundi Smart Overnight Return UCITS ETF EUR (Acc)",        0.10, "ETF", "Amundi",    "€STR Overnight Rate",                                      "Obbligazionari", "Ultra-Short"],
+  ["IE00B4WXJJ65", "IBGS.L",   "IBGS.L",    "LSE",      "iShares EUR Govt Bond 1-3yr UCITS ETF EUR (Dist)",         0.20, "ETF", "iShares",   "Bloomberg Euro Treasury 1-3 Year",                         "Obbligazionari", "Ultra-Short"],
   // ── Cripto (ETP/ETN) ─────────────────────────────────────────────────────
   ["CH1134541153", "BTCE.DE",   "BTCE.DE",   "XETRA",    "ETC Group Physical Bitcoin ETP USD",                       2.00, "ETP", "ETC Group", "Physical Bitcoin",                                         "Criptovalute", "Bitcoin"],
   ["XS2376095068", "VBTC.L",    "VBTC.L",    "LSE",      "VanEck Bitcoin ETN USD",                                   1.00, "ETN", "VanEck",    "Physical Bitcoin",                                         "Criptovalute", "Bitcoin"],
+  // ── Cripto Spot ──────────────────────────────────────────────────────────
+  ["CRYPTO",       "BTC-USD",   "BTC-USD",   "CRYPTO",   "Bitcoin (BTC)",                                            0.00, "ETP", "Spot",      "Spot Bitcoin",                                             "Criptovalute", "Bitcoin"],
+  ["CRYPTO",       "ETH-USD",   "ETH-USD",   "CRYPTO",   "Ethereum (ETH)",                                           0.00, "ETP", "Spot",      "Spot Ethereum",                                            "Criptovalute", "Ethereum"],
+  ["CRYPTO",       "BNB-USD",   "BNB-USD",   "CRYPTO",   "BNB – Binance Coin",                                       0.00, "ETP", "Spot",      "Spot BNB",                                                 "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "SOL-USD",   "SOL-USD",   "CRYPTO",   "Solana (SOL)",                                             0.00, "ETP", "Spot",      "Spot Solana",                                              "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "XRP-USD",   "XRP-USD",   "CRYPTO",   "XRP – Ripple",                                             0.00, "ETP", "Spot",      "Spot XRP",                                                 "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "ADA-USD",   "ADA-USD",   "CRYPTO",   "Cardano (ADA)",                                            0.00, "ETP", "Spot",      "Spot Cardano",                                             "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "AVAX-USD",  "AVAX-USD",  "CRYPTO",   "Avalanche (AVAX)",                                         0.00, "ETP", "Spot",      "Spot Avalanche",                                           "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "DOGE-USD",  "DOGE-USD",  "CRYPTO",   "Dogecoin (DOGE)",                                          0.00, "ETP", "Spot",      "Spot Dogecoin",                                            "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "LINK-USD",  "LINK-USD",  "CRYPTO",   "Chainlink (LINK)",                                         0.00, "ETP", "Spot",      "Spot Chainlink",                                           "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "DOT-USD",   "DOT-USD",   "CRYPTO",   "Polkadot (DOT)",                                           0.00, "ETP", "Spot",      "Spot Polkadot",                                            "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "MATIC-USD", "MATIC-USD", "CRYPTO",   "Polygon (MATIC/POL)",                                      0.00, "ETP", "Spot",      "Spot Polygon",                                             "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "UNI-USD",   "UNI-USD",   "CRYPTO",   "Uniswap (UNI)",                                            0.00, "ETP", "Spot",      "Spot Uniswap",                                             "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "LTC-USD",   "LTC-USD",   "CRYPTO",   "Litecoin (LTC)",                                           0.00, "ETP", "Spot",      "Spot Litecoin",                                            "Criptovalute", "Altcoin"],
+  ["CRYPTO",       "NEAR-USD",  "NEAR-USD",  "CRYPTO",   "NEAR Protocol",                                            0.00, "ETP", "Spot",      "Spot NEAR Protocol",                                       "Criptovalute", "Altcoin"],
 ]
 
 // Proxy map: underlyingIndex keyword → yahoo finance proxy ticker
@@ -147,6 +182,17 @@ const PROXY_RULES: [string[], string][] = [
   [["msci emerging", "ftse emerging", "emerging markets"],      "EEM"],
   [["msci europe", "euro stoxx", "ftse europe", "msci emu"],    "^STOXX50E"],
   [["bloomberg global aggregate", "global aggregate"],          "AGG"],
+  [["bloomberg us treasury 20", "us treasury 20"],               "TLT"],
+  [["bloomberg us treasury 7-10", "us treasury 7-10"],          "IEF"],
+  [["bloomberg us treasury 3-7", "us treasury 3-7"],            "IEI"],
+  [["bloomberg us treasury 0-1", "us treasury 0-1"],            "SHV"],
+  [["bloomberg us treasury float", "vanguard usd treasury"],    "IEF"],
+  [["bloomberg us corporate", "us corporate float"],            "LQD"],
+  [["jpmorgan embi", "em bond", "embi global", "jpm gbi-em", "bloomberg usd em"], "EMB"],
+  [["bloomberg msci global green", "green bond"],               "AGG"],
+  [["bloomberg sasb euro corporate esg"],                       "AGG"],
+  [["overnight rate", "eonia", "€str overnight", "overnight return"], "SHV"],
+  [["bloomberg euro government 1-3"],                           "SHV"],
   [["government bond", "treasury", "euro treasury", "euro government"], "TLT"],
   [["physical gold", "gold"],                                   "GC=F"],
   [["real estate", "reit", "epra"],                             "VNQ"],
@@ -219,8 +265,23 @@ const AUM_MAP: Record<string, number> = {
   "V20A.DE":   1200,  "V40A.DE":   1800, "V60A.DE":   3000, "V80A.DE":   4500,
   // ESG
   "SUWS.MI":   2500,  "SUSW.MI":   3000, "LCWL.MI":    500,
-  // Criptovalute
-  "BTCE.DE":    800,  "VBTC.L":     300,
+  // USD Governativi
+  "IDTL.L":    3000, "DTLA.L":    2000, "IBTM.L":    1500, "IBTU.L":    2500, "VDTY.L":     800,
+  // USD Corporate
+  "LQDA.L":    2000, "VUCP.MI":    800, "LQDE.L":    3500,
+  // Emergenti Bond
+  "SEML.MI":   3000, "VDEM.L":     600, "EMBE.MI":    400,
+  // ESG Bond
+  "CLMA.MI":    300,
+  // Ultra-Short
+  "XEON.DE":  12000, "CSH2.PA":   5000, "IBGS.L":    2000,
+  // Criptovalute ETP
+  "BTCE.DE":    800, "VBTC.L":     300,
+  // Criptovalute Spot
+  "BTC-USD":  1800000, "ETH-USD": 350000, "BNB-USD":  90000, "SOL-USD":  80000,
+  "XRP-USD":  150000,  "ADA-USD":  25000, "AVAX-USD": 12000, "DOGE-USD": 25000,
+  "LINK-USD":  15000,  "DOT-USD":  10000, "MATIC-USD":  8000, "UNI-USD":   8000,
+  "LTC-USD":   10000,  "NEAR-USD":  6000,
 }
 
 // Proxy espliciti per ticker specifici (override)
@@ -231,10 +292,26 @@ const PROXY_OVERRIDE: Record<string, string | null> = {
   "IWDP.MI": "VNQ",
   "REIT.MI": "VNQ",
   "IDVY.MI": "VYM",
-  "BTCE.DE": null,
-  "VBTC.L":  null,
-  "AIGI.MI": "GSG",
-  "NRGG.MI": "XLE",
+  "BTCE.DE":   null,
+  "VBTC.L":    null,
+  "BTC-USD":   null,
+  "ETH-USD":   null,
+  "BNB-USD":   null,
+  "SOL-USD":   null,
+  "XRP-USD":   null,
+  "ADA-USD":   null,
+  "AVAX-USD":  null,
+  "DOGE-USD":  null,
+  "LINK-USD":  null,
+  "DOT-USD":   null,
+  "MATIC-USD": null,
+  "UNI-USD":   null,
+  "LTC-USD":   null,
+  "NEAR-USD":  null,
+  "XEON.DE":   null,
+  "CSH2.PA":   null,
+  "AIGI.MI":   "GSG",
+  "NRGG.MI":   "XLE",
 }
 
 function dedup(arr: ETFEntry[]): ETFEntry[] {

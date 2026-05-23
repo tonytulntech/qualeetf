@@ -13,6 +13,7 @@ type HoldingsData = {
   assetMix:  { stock: number | null; bond: number | null; cash: number | null }
   geography: GeoItem[] | null
   currencies: CurrencyItem[] | null
+  avgDurationYears: number | null
 }
 
 const PALETTE = [
@@ -112,7 +113,7 @@ export default function Composizione({ ticker }: { ticker: string }) {
     if (data?.geography?.length)  tabs.push({ key: 'geo',      label: 'Geografica' })
     if (data?.sectors?.length)    tabs.push({ key: 'settore',  label: 'Settore' })
     if (data?.currencies?.length) tabs.push({ key: 'valuta',   label: 'Valuta' })
-    if (data?.holdings?.length)   tabs.push({ key: 'holdings', label: 'Primi Titoli' })
+    if (data?.holdings?.length)   tabs.push({ key: 'holdings', label: data.holdings.length === 1 ? 'Asset' : 'Titoli Principali' })
     return tabs
   }, [data])
 
@@ -129,17 +130,68 @@ export default function Composizione({ ticker }: { ticker: string }) {
     </div>
   )
 
-  if (!data || (!data.geography && !data.sectors && !data.holdings)) return null
+  if (!data || (!data.geography?.length && !data.sectors?.length && !data.holdings?.length)) return null
 
   const geoData      = data.geography  ?? []
   const currData     = data.currencies ?? []
   const sectorData   = data.sectors    ?? []
   const holdingsData = data.holdings   ?? []
+  const duration     = data.avgDurationYears ?? null
 
   const topHoldingsPct = holdingsData.reduce((s, h) => s + h.pct, 0)
 
+  // Duration helpers
+  const durationColor = (d: number) =>
+    d < 0.1 ? '#22c55e' : d < 2 ? '#84cc16' : d < 5 ? '#f59e0b' : d < 9 ? '#f97316' : '#ef4444'
+  const durationLabel = (d: number) =>
+    d < 0.1 ? 'Overnight' : d < 2 ? 'Ultra-corta' : d < 4 ? 'Breve' : d < 7 ? 'Media' : d < 12 ? 'Lunga' : 'Molto lunga'
+
   return (
     <div className="card" style={{ padding: '24px 20px', marginBottom: 24 }}>
+
+      {/* Duration badge — solo per ETF obbligazionari */}
+      {duration !== null && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 16,
+          padding: '14px 18px', borderRadius: 12, marginBottom: 20,
+          background: 'var(--surface-2)', border: `1px solid ${durationColor(duration)}40`,
+        }}>
+          {/* Numero grande */}
+          <div style={{ textAlign: 'center', minWidth: 80 }}>
+            <div style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.04em', color: durationColor(duration), lineHeight: 1 }}>
+              {duration < 0.1 ? '≈0' : duration.toFixed(1)}
+            </div>
+            <div style={{ fontSize: '0.65rem', fontWeight: 600, color: durationColor(duration), textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>
+              anni
+            </div>
+          </div>
+          {/* Barra visiva */}
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: 5 }}>
+              <span style={{ fontWeight: 700 }}>Duration media ponderata</span>
+              <span style={{ color: durationColor(duration), fontWeight: 700 }}>{durationLabel(duration)}</span>
+            </div>
+            <div style={{ height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden', marginBottom: 5 }}>
+              <div style={{ height: '100%', width: `${Math.min(duration / 20 * 100, 100)}%`, background: durationColor(duration), borderRadius: 4 }} />
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>
+              {duration < 0.1
+                ? 'Immune alle variazioni di tasso — replica il tasso overnight della BCE'
+                : `Per ogni +1% dei tassi d'interesse, il prezzo scende di circa ${duration.toFixed(1)}%`}
+            </div>
+          </div>
+          {/* Pill sensibilità */}
+          {duration >= 0.1 && (
+            <div style={{ textAlign: 'center', minWidth: 72 }}>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ef4444', letterSpacing: '-0.03em' }}>
+                −{duration.toFixed(1)}%
+              </div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-3)', lineHeight: 1.3 }}>se tassi<br />+1%</div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ marginBottom: 18 }}>
         <div className="label" style={{ marginBottom: 10 }}>Composizione</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -172,25 +224,30 @@ export default function Composizione({ ticker }: { ticker: string }) {
           {tab === 'holdings' && holdingsData.length > 0 && (
             <>
               <DonutChart
-                data={[
-                  ...holdingsData.map(h => ({ name: h.name, pct: h.pct })),
-                  { name: 'Altri', pct: Math.max(0, 100 - topHoldingsPct) },
-                ]}
+                data={holdingsData.length === 1
+                  ? holdingsData.map(h => ({ name: h.name, pct: h.pct }))
+                  : [
+                      ...holdingsData.map(h => ({ name: h.name, pct: h.pct })),
+                      ...(topHoldingsPct < 99.5 ? [{ name: 'Altri', pct: Math.max(0, 100 - topHoldingsPct) }] : []),
+                    ]
+                }
                 nameKey="name"
                 valueKey="pct"
               />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 8 }}>
-                <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '12px 14px', textAlign: 'center' }}>
-                  <div className="label" style={{ marginBottom: 4, fontSize: '0.68rem' }}>Peso Top {holdingsData.length}</div>
-                  <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{topHoldingsPct.toFixed(1)}%</div>
-                </div>
-                {data.assetMix.stock != null && (
+              {holdingsData.length > 1 && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 8 }}>
                   <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '12px 14px', textAlign: 'center' }}>
-                    <div className="label" style={{ marginBottom: 4, fontSize: '0.68rem' }}>Azioni</div>
-                    <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{data.assetMix.stock}%</div>
+                    <div className="label" style={{ marginBottom: 4, fontSize: '0.68rem' }}>Peso Top {holdingsData.length}</div>
+                    <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{topHoldingsPct.toFixed(1)}%</div>
                   </div>
-                )}
-              </div>
+                  {data.assetMix.stock != null && (
+                    <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '12px 14px', textAlign: 'center' }}>
+                      <div className="label" style={{ marginBottom: 4, fontSize: '0.68rem' }}>Azioni</div>
+                      <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{data.assetMix.stock}%</div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -213,7 +270,9 @@ export default function Composizione({ ticker }: { ticker: string }) {
       </div>
 
       <div style={{ marginTop: 16, fontSize: '0.72rem', color: 'var(--text-3)', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-        Dati geografici e valutari aggiornati trimestralmente · Settori e holdings aggiornati giornalmente da Yahoo Finance
+        {data.holdings?.length === 1
+          ? 'Asset singolo — posizione al 100% sull\'asset sottostante'
+          : 'Dati geografici e valutari aggiornati trimestralmente · Settori e holdings da Yahoo Finance'}
       </div>
     </div>
   )

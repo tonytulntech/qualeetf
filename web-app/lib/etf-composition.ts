@@ -4,10 +4,12 @@
 
 export type GeoItem      = { country: string; pct: number }
 export type CurrencyItem = { code: string; name: string; pct: number }
+export type HoldingItem  = { name: string; pct: number }
 
 export type CompositionProfile = {
-  geography:  GeoItem[]
-  currencies: CurrencyItem[]
+  geography:    GeoItem[]
+  currencies:   CurrencyItem[]
+  topHoldings?: HoldingItem[]
 }
 
 // ── Profili geografici / valutari per indice ─────────────────────────────────
@@ -39,6 +41,18 @@ const PROFILES: Record<string, CompositionProfile> = {
       { code: 'DKK', name: 'Corona danese',    pct: 1.3  },
       { code: 'Altri', name: 'Altri',          pct: 0.5  },
     ],
+    topHoldings: [
+      { name: 'Apple',           pct: 4.8 },
+      { name: 'NVIDIA',          pct: 4.5 },
+      { name: 'Microsoft',       pct: 4.4 },
+      { name: 'Amazon',          pct: 2.7 },
+      { name: 'Meta Platforms',  pct: 2.2 },
+      { name: 'Alphabet A',      pct: 1.8 },
+      { name: 'Alphabet C',      pct: 1.6 },
+      { name: 'Broadcom',        pct: 1.5 },
+      { name: 'Tesla',           pct: 1.2 },
+      { name: 'JPMorgan Chase',  pct: 1.2 },
+    ],
   },
 
   ftse_all_world: {
@@ -67,6 +81,18 @@ const PROFILES: Record<string, CompositionProfile> = {
       { code: 'TWD', name: 'Dollaro taiwanese',pct: 1.9  },
       { code: 'Altri', name: 'Altri',          pct: 6.2  },
     ],
+    topHoldings: [
+      { name: 'Apple',           pct: 3.9 },
+      { name: 'NVIDIA',          pct: 3.7 },
+      { name: 'Microsoft',       pct: 3.6 },
+      { name: 'Amazon',          pct: 2.3 },
+      { name: 'Meta Platforms',  pct: 1.8 },
+      { name: 'Alphabet A',      pct: 1.5 },
+      { name: 'Alphabet C',      pct: 1.4 },
+      { name: 'Broadcom',        pct: 1.3 },
+      { name: 'Tesla',           pct: 1.0 },
+      { name: 'JPMorgan Chase',  pct: 1.0 },
+    ],
   },
 
   sp500: {
@@ -75,6 +101,18 @@ const PROFILES: Record<string, CompositionProfile> = {
     ],
     currencies: [
       { code: 'USD', name: 'Dollaro USA', pct: 100 },
+    ],
+    topHoldings: [
+      { name: 'Apple',           pct: 6.7 },
+      { name: 'NVIDIA',          pct: 6.5 },
+      { name: 'Microsoft',       pct: 6.0 },
+      { name: 'Amazon',          pct: 3.8 },
+      { name: 'Meta Platforms',  pct: 2.9 },
+      { name: 'Alphabet A',      pct: 2.4 },
+      { name: 'Broadcom',        pct: 2.3 },
+      { name: 'Alphabet C',      pct: 2.2 },
+      { name: 'Tesla',           pct: 1.8 },
+      { name: 'JPMorgan Chase',  pct: 1.6 },
     ],
   },
 
@@ -91,6 +129,18 @@ const PROFILES: Record<string, CompositionProfile> = {
       { code: 'EUR', name: 'Euro',        pct: 1.8  },
       { code: 'GBP', name: 'Sterlina',    pct: 0.9  },
       { code: 'Altri', name: 'Altri',     pct: 0.5  },
+    ],
+    topHoldings: [
+      { name: 'Apple',           pct: 8.5 },
+      { name: 'NVIDIA',          pct: 8.1 },
+      { name: 'Microsoft',       pct: 7.7 },
+      { name: 'Amazon',          pct: 5.1 },
+      { name: 'Meta Platforms',  pct: 4.6 },
+      { name: 'Broadcom',        pct: 3.4 },
+      { name: 'Alphabet A',      pct: 3.3 },
+      { name: 'Alphabet C',      pct: 3.1 },
+      { name: 'Tesla',           pct: 2.4 },
+      { name: 'Costco',          pct: 1.4 },
     ],
   },
 
@@ -118,6 +168,18 @@ const PROFILES: Record<string, CompositionProfile> = {
       { code: 'ZAR', name: 'Rand sudafricano',pct: 2.8  },
       { code: 'Altri', name: 'Altri',         pct: 16.9 },
     ],
+    topHoldings: [
+      { name: 'TSMC',              pct: 8.7 },
+      { name: 'Tencent',           pct: 4.5 },
+      { name: 'Samsung Electronics',pct: 3.2 },
+      { name: 'Alibaba',           pct: 2.9 },
+      { name: 'Meituan',           pct: 1.9 },
+      { name: 'Reliance Industries',pct: 1.6 },
+      { name: 'Infosys',           pct: 1.3 },
+      { name: 'HDFC Bank',         pct: 1.2 },
+      { name: 'Xiaomi',            pct: 1.1 },
+      { name: 'Vale',              pct: 1.0 },
+    ],
   },
 
   msci_europe: {
@@ -142,6 +204,18 @@ const PROFILES: Record<string, CompositionProfile> = {
       { code: 'DKK', name: 'Corona danese',  pct: 5.3  },
       { code: 'Altri', name: 'Altri',        pct: 1.8  },
     ],
+    topHoldings: [
+      { name: 'ASML Holding',    pct: 4.5 },
+      { name: 'Nestlé',          pct: 3.2 },
+      { name: 'Novo Nordisk',    pct: 3.1 },
+      { name: 'LVMH',            pct: 2.8 },
+      { name: 'SAP',             pct: 2.5 },
+      { name: 'Roche',           pct: 2.3 },
+      { name: 'Novartis',        pct: 2.1 },
+      { name: 'Shell',           pct: 2.0 },
+      { name: 'AstraZeneca',     pct: 1.9 },
+      { name: 'HSBC',            pct: 1.8 },
+    ],
   },
 
   euro_stoxx50: {
@@ -158,6 +232,18 @@ const PROFILES: Record<string, CompositionProfile> = {
     currencies: [
       { code: 'EUR', name: 'Euro', pct: 100 },
     ],
+    topHoldings: [
+      { name: 'ASML Holding',        pct: 8.9 },
+      { name: 'LVMH',                pct: 5.2 },
+      { name: 'SAP',                 pct: 5.0 },
+      { name: 'TotalEnergies',       pct: 4.5 },
+      { name: 'Siemens',             pct: 4.2 },
+      { name: 'Sanofi',              pct: 3.7 },
+      { name: 'Schneider Electric',  pct: 3.6 },
+      { name: 'Airbus',              pct: 3.5 },
+      { name: 'BNP Paribas',         pct: 3.2 },
+      { name: 'Allianz',             pct: 3.0 },
+    ],
   },
 
   msci_japan: {
@@ -166,6 +252,18 @@ const PROFILES: Record<string, CompositionProfile> = {
     ],
     currencies: [
       { code: 'JPY', name: 'Yen giapponese', pct: 100 },
+    ],
+    topHoldings: [
+      { name: 'Toyota Motor',     pct: 4.1 },
+      { name: 'Sony Group',       pct: 2.8 },
+      { name: 'Mitsubishi UFJ',   pct: 2.3 },
+      { name: 'Hitachi',          pct: 2.1 },
+      { name: 'Keyence',          pct: 1.9 },
+      { name: 'Sumitomo Mitsui',  pct: 1.7 },
+      { name: 'Tokyo Electron',   pct: 1.6 },
+      { name: 'Recruit Holdings', pct: 1.5 },
+      { name: 'SoftBank Group',   pct: 1.4 },
+      { name: 'Fast Retailing',   pct: 1.3 },
     ],
   },
 
@@ -416,6 +514,298 @@ const PROFILES: Record<string, CompositionProfile> = {
       { code: 'CHF', name: 'Franco svizzero',pct: 10.2 },
     ],
   },
+
+  // ── USD Treasury (generico — tutte le scadenze) ──────────────────────────
+  usd_treasury: {
+    geography: [
+      { country: 'Stati Uniti', pct: 100 },
+    ],
+    currencies: [
+      { code: 'USD', name: 'Dollaro USA', pct: 100 },
+    ],
+    topHoldings: [
+      { name: 'US Treasury 4.500% 2033', pct: 3.8 },
+      { name: 'US Treasury 4.375% 2031', pct: 3.5 },
+      { name: 'US Treasury 4.250% 2034', pct: 3.3 },
+      { name: 'US Treasury 3.875% 2030', pct: 3.1 },
+      { name: 'US Treasury 4.000% 2032', pct: 2.9 },
+      { name: 'US Treasury 3.750% 2026', pct: 2.7 },
+      { name: 'US Treasury 4.625% 2026', pct: 2.5 },
+      { name: 'US Treasury 4.000% 2027', pct: 2.3 },
+      { name: 'US Treasury 3.500% 2028', pct: 2.1 },
+      { name: 'Altri Treasury',          pct: 73.8 },
+    ],
+  },
+
+  // ── USD Treasury 20+ anni ────────────────────────────────────────────────
+  usd_treasury_long: {
+    geography: [
+      { country: 'Stati Uniti', pct: 100 },
+    ],
+    currencies: [
+      { code: 'USD', name: 'Dollaro USA', pct: 100 },
+    ],
+    topHoldings: [
+      { name: 'US Treasury 4.375% 2043', pct: 6.2 },
+      { name: 'US Treasury 4.125% 2044', pct: 5.8 },
+      { name: 'US Treasury 3.625% 2053', pct: 5.4 },
+      { name: 'US Treasury 4.750% 2041', pct: 4.9 },
+      { name: 'US Treasury 3.000% 2047', pct: 4.6 },
+      { name: 'US Treasury 2.875% 2046', pct: 4.2 },
+      { name: 'US Treasury 2.250% 2052', pct: 3.8 },
+      { name: 'US Treasury 1.875% 2051', pct: 3.5 },
+      { name: 'US Treasury 4.000% 2042', pct: 3.3 },
+      { name: 'Altri Treasury 20+ anni', pct: 58.3 },
+    ],
+  },
+
+  // ── USD Corporate Bond ───────────────────────────────────────────────────
+  usd_corp_bond: {
+    geography: [
+      { country: 'Stati Uniti',    pct: 84.3 },
+      { country: 'Regno Unito',    pct: 4.8  },
+      { country: 'Canada',         pct: 3.1  },
+      { country: 'Paesi Bassi',    pct: 2.4  },
+      { country: 'Francia',        pct: 2.2  },
+      { country: 'Giappone',       pct: 1.2  },
+      { country: 'Altri',          pct: 2.0  },
+    ],
+    currencies: [
+      { code: 'USD', name: 'Dollaro USA', pct: 100 },
+    ],
+    topHoldings: [
+      { name: 'Apple 3.85% 2043',          pct: 0.6 },
+      { name: 'JPMorgan Chase 3.702% 2030', pct: 0.5 },
+      { name: 'Bank of America 4.375% 2033',pct: 0.5 },
+      { name: 'Microsoft 3.45% 2036',       pct: 0.4 },
+      { name: 'Goldman Sachs 4.40% 2032',   pct: 0.4 },
+      { name: 'Wells Fargo 4.478% 2039',    pct: 0.4 },
+      { name: 'AT&T 3.65% 2051',            pct: 0.3 },
+      { name: 'Verizon 3.55% 2051',         pct: 0.3 },
+      { name: 'Amazon 3.875% 2038',         pct: 0.3 },
+      { name: 'Altri obbligazioni corp.',   pct: 96.3 },
+    ],
+  },
+
+  // ── EM Bond Hard Currency (USD) ──────────────────────────────────────────
+  em_bond_hard: {
+    geography: [
+      { country: 'Messico',     pct: 7.8  },
+      { country: 'Indonesia',   pct: 7.2  },
+      { country: 'Arabia Saudita', pct: 6.4 },
+      { country: 'Turchia',     pct: 5.9  },
+      { country: 'Brasile',     pct: 5.6  },
+      { country: 'Cina',        pct: 5.1  },
+      { country: 'Colombia',    pct: 3.8  },
+      { country: 'Filippine',   pct: 3.5  },
+      { country: 'Sudafrica',   pct: 3.2  },
+      { country: 'Romania',     pct: 2.9  },
+      { country: 'Ungheria',    pct: 2.7  },
+      { country: 'Polonia',     pct: 2.5  },
+      { country: 'Altri',       pct: 43.4 },
+    ],
+    currencies: [
+      { code: 'USD', name: 'Dollaro USA', pct: 100 },
+    ],
+  },
+
+  // ── EM Bond Local Currency ───────────────────────────────────────────────
+  em_bond_local: {
+    geography: [
+      { country: 'Brasile',     pct: 10.2 },
+      { country: 'Messico',     pct: 9.8  },
+      { country: 'Indonesia',   pct: 8.6  },
+      { country: 'Cina',        pct: 7.9  },
+      { country: 'India',       pct: 7.2  },
+      { country: 'Sudafrica',   pct: 5.8  },
+      { country: 'Polonia',     pct: 5.1  },
+      { country: 'Malesia',     pct: 4.4  },
+      { country: 'Tailandia',   pct: 3.9  },
+      { country: 'Ungheria',    pct: 3.5  },
+      { country: 'Colombia',    pct: 3.2  },
+      { country: 'Rep. Ceca',   pct: 2.8  },
+      { country: 'Altri',       pct: 27.6 },
+    ],
+    currencies: [
+      { code: 'BRL', name: 'Real brasiliano',  pct: 10.2 },
+      { code: 'MXN', name: 'Peso messicano',   pct: 9.8  },
+      { code: 'IDR', name: 'Rupia indonesiana',pct: 8.6  },
+      { code: 'CNY', name: 'Yuan cinese',      pct: 7.9  },
+      { code: 'INR', name: 'Rupia indiana',    pct: 7.2  },
+      { code: 'ZAR', name: 'Rand sudafricano', pct: 5.8  },
+      { code: 'PLN', name: 'Zloty polacco',    pct: 5.1  },
+      { code: 'MYR', name: 'Ringgit malese',   pct: 4.4  },
+      { code: 'THB', name: 'Baht tailandese',  pct: 3.9  },
+      { code: 'Altri', name: 'Altri',          pct: 37.1 },
+    ],
+  },
+
+  // ── Green Bond Globale (EUR Hedged) ──────────────────────────────────────
+  green_bond_global: {
+    geography: [
+      { country: 'Supranazionale',  pct: 19.4 },
+      { country: 'Germania',        pct: 12.8 },
+      { country: 'Francia',         pct: 11.6 },
+      { country: 'Stati Uniti',     pct: 10.2 },
+      { country: 'Paesi Bassi',     pct: 8.4  },
+      { country: 'Spagna',          pct: 6.1  },
+      { country: 'Svezia',          pct: 5.3  },
+      { country: 'Italia',          pct: 4.8  },
+      { country: 'Danimarca',       pct: 3.9  },
+      { country: 'Belgio',          pct: 3.2  },
+      { country: 'Altri',           pct: 14.3 },
+    ],
+    currencies: [
+      { code: 'EUR', name: 'Euro (hedged)',     pct: 72.4 },
+      { code: 'USD', name: 'Dollaro USA',       pct: 10.2 },
+      { code: 'SEK', name: 'Corona svedese',    pct: 5.3  },
+      { code: 'Altri', name: 'Altri (hedged)',  pct: 12.1 },
+    ],
+  },
+
+  // ── Ultra-Short / Monetario EUR ──────────────────────────────────────────
+  ultra_short_eur: {
+    geography: [
+      { country: 'Germania',    pct: 28.4 },
+      { country: 'Francia',     pct: 22.1 },
+      { country: 'Italia',      pct: 17.6 },
+      { country: 'Spagna',      pct: 12.3 },
+      { country: 'Paesi Bassi', pct: 8.2  },
+      { country: 'Belgio',      pct: 5.6  },
+      { country: 'Austria',     pct: 3.2  },
+      { country: 'Altri',       pct: 2.6  },
+    ],
+    currencies: [
+      { code: 'EUR', name: 'Euro', pct: 100 },
+    ],
+    topHoldings: [
+      { name: 'BEI / Cassa Depositi Prestiti', pct: 18.3 },
+      { name: 'German T-Bill 0.00% 2025',      pct: 8.6  },
+      { name: 'French OAT 0.00% 2025',         pct: 7.9  },
+      { name: 'Italian BOT 0.00% 2025',        pct: 6.8  },
+      { name: 'Spanish LETRAS 0.00% 2025',     pct: 5.5  },
+      { name: 'Depositi overnight BCE (€STR)', pct: 52.9 },
+    ],
+  },
+
+  // ── Overnight / EONIA (puro tasso BCE) ───────────────────────────────────
+  overnight_eur: {
+    geography: [
+      { country: 'Eurozona', pct: 100 },
+    ],
+    currencies: [
+      { code: 'EUR', name: 'Euro', pct: 100 },
+    ],
+    topHoldings: [
+      { name: 'Depositi overnight interbancari BCE (€STR)', pct: 100 },
+    ],
+  },
+
+  // ── Crypto spot: Bitcoin ──────────────────────────────────────────────────
+  bitcoin_spot: {
+    geography: [],
+    currencies: [
+      { code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 },
+    ],
+    topHoldings: [
+      { name: 'Bitcoin (BTC)', pct: 100 },
+    ],
+  },
+
+  // ── Crypto spot: Ethereum ─────────────────────────────────────────────────
+  ethereum_spot: {
+    geography: [],
+    currencies: [
+      { code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 },
+    ],
+    topHoldings: [
+      { name: 'Ethereum (ETH)', pct: 100 },
+    ],
+  },
+
+  // ── Crypto spot: BNB ─────────────────────────────────────────────────────
+  bnb_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'BNB – Binance Coin', pct: 100 }],
+  },
+
+  // ── Crypto spot: Solana ───────────────────────────────────────────────────
+  solana_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'Solana (SOL)', pct: 100 }],
+  },
+
+  // ── Crypto spot: XRP ─────────────────────────────────────────────────────
+  xrp_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'XRP – Ripple', pct: 100 }],
+  },
+
+  // ── Crypto spot: Cardano ──────────────────────────────────────────────────
+  cardano_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'Cardano (ADA)', pct: 100 }],
+  },
+
+  // ── Crypto spot: Avalanche ────────────────────────────────────────────────
+  avax_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'Avalanche (AVAX)', pct: 100 }],
+  },
+
+  // ── Crypto spot: Dogecoin ─────────────────────────────────────────────────
+  doge_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'Dogecoin (DOGE)', pct: 100 }],
+  },
+
+  // ── Crypto spot: Chainlink ────────────────────────────────────────────────
+  link_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'Chainlink (LINK)', pct: 100 }],
+  },
+
+  // ── Crypto spot: Polkadot ─────────────────────────────────────────────────
+  dot_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'Polkadot (DOT)', pct: 100 }],
+  },
+
+  // ── Crypto spot: Polygon ──────────────────────────────────────────────────
+  matic_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'Polygon (MATIC/POL)', pct: 100 }],
+  },
+
+  // ── Crypto spot: Uniswap ──────────────────────────────────────────────────
+  uni_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'Uniswap (UNI)', pct: 100 }],
+  },
+
+  // ── Crypto spot: Litecoin ─────────────────────────────────────────────────
+  ltc_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'Litecoin (LTC)', pct: 100 }],
+  },
+
+  // ── Crypto spot: NEAR Protocol ────────────────────────────────────────────
+  near_spot: {
+    geography: [],
+    currencies: [{ code: 'USD', name: 'Dollaro USA (quotazione)', pct: 100 }],
+    topHoldings: [{ name: 'NEAR Protocol', pct: 100 }],
+  },
 }
 
 // ── Mappa ticker → profilo ───────────────────────────────────────────────────
@@ -455,8 +845,32 @@ const TICKER_PROFILE: Record<string, string> = {
   'EUNA.DE': 'euro_corp_bond', 'VCBO.MI': 'euro_corp_bond',
   'IEAA.L': 'euro_corp_bond', 'IHYG.MI': 'euro_corp_bond',
   'HYLD.DE': 'euro_corp_bond',
-  // TIPS
-  'TIPS.L': 'sp500',
+  // TIPS / Inflation-Linked
+  'TIPS.L': 'usd_treasury',
+  // USD Treasury
+  'IDTL.L':  'usd_treasury_long', 'DTLA.L':  'usd_treasury',
+  'IBTM.L':  'usd_treasury',      'IBTU.L':  'usd_treasury',
+  'VDTY.L':  'usd_treasury',
+  // USD Corporate
+  'LQDA.L':  'usd_corp_bond', 'VUCP.MI': 'usd_corp_bond', 'LQDE.L': 'usd_corp_bond',
+  // EM Bond
+  'SEML.MI': 'em_bond_hard',  'VDEM.L':  'em_bond_hard',
+  'EMBE.MI': 'em_bond_local',
+  // Green Bond
+  'CLMA.MI': 'green_bond_global',
+  // Ultra-Short
+  'IBGS.L':  'ultra_short_eur',
+  'XEON.DE': 'overnight_eur', 'CSH2.PA': 'overnight_eur',
+  // Crypto ETP (già esistenti)
+  'BTCE.DE': 'bitcoin_spot',  'VBTC.L':  'bitcoin_spot',
+  // Crypto spot
+  'BTC-USD':  'bitcoin_spot',  'ETH-USD':  'ethereum_spot',
+  'BNB-USD':  'bnb_spot',      'SOL-USD':  'solana_spot',
+  'XRP-USD':  'xrp_spot',      'ADA-USD':  'cardano_spot',
+  'AVAX-USD': 'avax_spot',     'DOGE-USD': 'doge_spot',
+  'LINK-USD': 'link_spot',     'DOT-USD':  'dot_spot',
+  'MATIC-USD':'matic_spot',    'UNI-USD':  'uni_spot',
+  'LTC-USD':  'ltc_spot',      'NEAR-USD': 'near_spot',
   // Real Estate
   'IWDP.MI': 'epra_nareit_dev', 'EPRA.MI': 'epra_nareit_dev',
   'REIT.MI': 'epra_nareit_europe',
@@ -482,4 +896,42 @@ const TICKER_PROFILE: Record<string, string> = {
 export function getCompositionProfile(ticker: string): CompositionProfile | null {
   const key = TICKER_PROFILE[ticker]
   return key ? PROFILES[key] ?? null : null
+}
+
+// ── Duration media ponderata per ETF obbligazionario (anni) ──────────────────
+// Modified duration ≈ prezzo % cambia di -duration% per ogni +1% dei tassi.
+export const BOND_DURATION_MAP: Record<string, number> = {
+  // ── Globali ────────────────────────────────────────────────────────────────
+  'AGGH.MI':   6.8, 'VAGF.MI':   6.8, 'XBAG.DE':  6.8,
+  // ── Euro Governativi ───────────────────────────────────────────────────────
+  'IGLT.L':   14.2,                              // UK Gilts all maturities
+  'IBTS.MI':   1.9,                              // Euro Gov 1-3yr
+  'CSBGE0.DE': 7.5, 'VETY.MI':  7.5, 'ETLB.MI': 7.5, 'IEGE.MI': 7.5,
+  'IBCI.MI':   8.1,                              // Inflation-linked
+  'TIPS.L':    7.2,                              // USD TIPS
+  // ── USD Governativi ────────────────────────────────────────────────────────
+  'IDTL.L':   17.8,                              // 20+yr Treasury
+  'DTLA.L':    8.2,                              // 7-10yr Treasury
+  'IBTM.L':    4.8,                              // 3-7yr Treasury
+  'IBTU.L':    0.4,                              // 0-1yr Treasury
+  'VDTY.L':    6.5,                              // USD Treasury tutte scadenze
+  // ── Euro Corporate ─────────────────────────────────────────────────────────
+  'EUNA.DE':   5.2, 'VCBO.MI':  5.2, 'IEAA.L':  5.2,
+  // ── High Yield ─────────────────────────────────────────────────────────────
+  'IHYG.MI':   3.8, 'HYLD.DE':  3.8,
+  // ── USD Corporate ──────────────────────────────────────────────────────────
+  'LQDA.L':    7.1, 'VUCP.MI':  7.1, 'LQDE.L':  7.1,
+  // ── Emergenti ──────────────────────────────────────────────────────────────
+  'SEML.MI':   7.3, 'VDEM.L':   6.8,            // hard currency
+  'EMBE.MI':   5.8,                              // local currency
+  // ── ESG Bond ───────────────────────────────────────────────────────────────
+  'CLMA.MI':   7.2,
+  // ── Ultra-Short ────────────────────────────────────────────────────────────
+  'IBGS.L':    1.9,                              // Euro Gov 1-3yr Dist
+  'XEON.DE':   0.003,                            // overnight
+  'CSH2.PA':   0.003,                            // overnight
+}
+
+export function getBondDuration(ticker: string): number | null {
+  return BOND_DURATION_MAP[ticker] ?? null
 }
